@@ -1,0 +1,11 @@
+# Conda environment para VELOCITY_RL (balance_manipulation G1 Hands).
+# Uso: conda env create -f environment.yml && conda activate mjlab_nonhuman
+# Luego ejecuta el script de instalación pip: bash install_server.sh
+# (o sigue los pasos de SETUP_SERVIDOR.md)
+name: mjlab_nonhuman
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip

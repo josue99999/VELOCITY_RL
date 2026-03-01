@@ -1,3 +1,5 @@
+.cursor/
+motion.mp4
 wandb/
 logs/
 onnx/

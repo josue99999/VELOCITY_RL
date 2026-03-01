@@ -18,28 +18,27 @@ from pathlib import Path
 
 # Añade el directorio donde está g1_with_hands_constants.py
 _CONSTANTS_DIR = (
-    Path(__file__).resolve().parent.parent.parent
-    / "asset_zoo" / "robots" / "robot_hands"
+  Path(__file__).resolve().parent.parent.parent / "asset_zoo" / "robots" / "robot_hands"
 )
 sys.path.insert(0, str(_CONSTANTS_DIR))
 
 
 from g1_with_hands_constants import (
-    get_spec,
-    G1_ARTICULATION,
-    KNEES_BENT_KEYFRAME,
-    _FINGER_MIMICS,
+  get_spec,
+  G1_ARTICULATION,
+  KNEES_BENT_KEYFRAME,
+  _FINGER_MIMICS,
 )
 
 
 def section(title: str):
-    print(f"\n{'─'*60}")
-    print(f"  {title}")
-    print(f"{'─'*60}")
+  print(f"\n{'─' * 60}")
+  print(f"  {title}")
+  print(f"{'─' * 60}")
 
 
 def check_mark(ok: bool) -> str:
-    return "✓" if ok else "✗ FALLO"
+  return "✓" if ok else "✗ FALLO"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -47,15 +46,15 @@ def check_mark(ok: bool) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 section("1. Compilando modelo")
 try:
-    spec  = get_spec()
-    model = spec.compile()
-    data  = mujoco.MjData(model)
-    print(f"  {check_mark(True)}  Modelo compilado")
-    print(f"      nq={model.nq}  nv={model.nv}  nu={model.nu}  nbody={model.nbody}")
-    print(f"      njnt={model.njnt}  neq={model.neq}")
+  spec = get_spec()
+  model = spec.compile()
+  data = mujoco.MjData(model)
+  print(f"  {check_mark(True)}  Modelo compilado")
+  print(f"      nq={model.nq}  nv={model.nv}  nu={model.nu}  nbody={model.nbody}")
+  print(f"      njnt={model.njnt}  neq={model.neq}")
 except Exception as e:
-    print(f"  ✗ ERROR al compilar: {e}")
-    raise SystemExit(1)
+  print(f"  ✗ ERROR al compilar: {e}")
+  raise SystemExit(1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -66,17 +65,16 @@ section("2. Actuadores")
 import re
 
 all_joint_names = [
-    mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i)
-    for i in range(model.njnt)
+  mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i) for i in range(model.njnt)
 ]
 
 for actuator_cfg in G1_ARTICULATION.actuators:
-    for pattern in actuator_cfg.target_names_expr:
-        matches = [j for j in all_joint_names if re.fullmatch(pattern, j)]
-        ok = len(matches) > 0
-        print(f"  {check_mark(ok)}  pattern '{pattern}' → {len(matches)} joints")
-        if not ok:
-            print(f"       ⚠ No se encontró ningún joint con este patrón")
+  for pattern in actuator_cfg.target_names_expr:
+    matches = [j for j in all_joint_names if re.fullmatch(pattern, j)]
+    ok = len(matches) > 0
+    print(f"  {check_mark(ok)}  pattern '{pattern}' → {len(matches)} joints")
+    if not ok:
+      print(f"       ⚠ No se encontró ningún joint con este patrón")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -85,20 +83,19 @@ for actuator_cfg in G1_ARTICULATION.actuators:
 section("3. Equalities mimic (dedos)")
 
 eq_names = [
-    mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_EQUALITY, i)
-    for i in range(model.neq)
+  mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_EQUALITY, i) for i in range(model.neq)
 ]
 print(f"  Equalities en modelo: {model.neq}")
 
 for name, slave, master, ratio in _FINGER_MIMICS:
-    ok = name in eq_names
-    print(f"  {check_mark(ok)}  {name}")
+  ok = name in eq_names
+  print(f"  {check_mark(ok)}  {name}")
 
 missing = [n for n, *_ in _FINGER_MIMICS if n not in eq_names]
 if missing:
-    print(f"\n  ⚠ Faltan {len(missing)} equalities — revisa get_spec()")
+  print(f"\n  ⚠ Faltan {len(missing)} equalities — revisa get_spec()")
 else:
-    print(f"\n  Todos los mimics inyectados correctamente")
+  print(f"\n  Todos los mimics inyectados correctamente")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,9 +105,9 @@ section("4. Pose inicial (KNEES_BENT_KEYFRAME)")
 
 joint_pos_cfg = KNEES_BENT_KEYFRAME.joint_pos
 for pattern, value in joint_pos_cfg.items():
-    matches = [j for j in all_joint_names if re.fullmatch(pattern, j)]
-    ok = len(matches) > 0
-    print(f"  {check_mark(ok)}  '{pattern}' = {value} → {len(matches)} joints")
+  matches = [j for j in all_joint_names if re.fullmatch(pattern, j)]
+  ok = len(matches) > 0
+  print(f"  {check_mark(ok)}  '{pattern}' = {value} → {len(matches)} joints")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -120,17 +117,17 @@ section("5. mj_forward con pose inicial")
 
 # Posición del pelvis
 data.qpos[0:3] = KNEES_BENT_KEYFRAME.pos  # x, y, z
-data.qpos[3]   = 1.0  # quat w (orientación neutra)
+data.qpos[3] = 1.0  # quat w (orientación neutra)
 
 # Aplicar joint_pos del keyframe
 for pattern, value in joint_pos_cfg.items():
-    for i in range(model.njnt):
-        jname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i)
-        if jname and re.fullmatch(pattern, jname):
-            jtype = model.jnt_type[i]
-            if jtype != mujoco.mjtJoint.mjJNT_FREE:
-                qadr = model.jnt_qposadr[i]
-                data.qpos[qadr] = value
+  for i in range(model.njnt):
+    jname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i)
+    if jname and re.fullmatch(pattern, jname):
+      jtype = model.jnt_type[i]
+      if jtype != mujoco.mjtJoint.mjJNT_FREE:
+        qadr = model.jnt_qposadr[i]
+        data.qpos[qadr] = value
 
 mujoco.mj_forward(model, data)
 
@@ -147,11 +144,11 @@ print(f"  {check_mark(ok_height)}  Altura pelvis = {pelvis_z:.4f} m  (esperado ~
 
 # Sitios de los pies — deben estar sobre el suelo
 for site_name in ["left_foot", "right_foot"]:
-    sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, site_name)
-    if sid >= 0:
-        foot_z = data.site_xpos[sid][2]
-        ok_foot = foot_z > -0.1
-        print(f"  {check_mark(ok_foot)}  {site_name} z = {foot_z:.4f} m")
+  sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, site_name)
+  if sid >= 0:
+    foot_z = data.site_xpos[sid][2]
+    ok_foot = foot_z > -0.1
+    print(f"  {check_mark(ok_foot)}  {site_name} z = {foot_z:.4f} m")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -166,8 +163,14 @@ print(f"  Sites           : {model.nsite}")
 print()
 
 # Desglose actuadores cuerpo vs manos
-body_joints  = [j for j in all_joint_names if re.search(r'hip|knee|ankle|waist|shoulder|elbow|wrist', j or '')]
-finger_joints = [j for j in all_joint_names if re.search(r'thumb|index|middle|ring|pinky', j or '')]
+body_joints = [
+  j
+  for j in all_joint_names
+  if re.search(r"hip|knee|ankle|waist|shoulder|elbow|wrist", j or "")
+]
+finger_joints = [
+  j for j in all_joint_names if re.search(r"thumb|index|middle|ring|pinky", j or "")
+]
 print(f"  Joints cuerpo   : {len(body_joints)}")
 print(f"  Joints dedos    : {len(finger_joints)}")
 print()
