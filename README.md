@@ -1,210 +1,260 @@
+# VELOCITY_RL – Balance Manipulation G1 Hands
 
-## Getting Started
+Este directorio contiene tu tarea personalizada de **balance / seguimiento de velocidad** para el humanoide **Unitree G1 con manos** (`G1-Hands`) usando MuJoCo-Warp y RSL-RL.
 
-mjlab requires an NVIDIA GPU for training. macOS is supported for evaluation only.
+Está pensado como recordatorio para ti mismo de TODO lo que tocaste y cómo volver a entrenar rápido tanto en tu laptop como en el servidor.
 
-**Try it now:**
+---
 
-Run the demo (no installation needed):
+## 1. Dónde están tus cambios
 
-```bash
-uvx --from mjlab --refresh \
-  --with "mujoco-warp @ git+https://github.com/google-deepmind/mujoco_warp@7c20a44bfed722e6415235792a1b247ea6b6a6d3" \
-  demo
-```
+- **Robot G1 con manos:**
+  - `src/mjlab/asset_zoo/robots/g1_hands/`
+    - `g1_hands.xml`: modelo MuJoCo del G1 con manos.
+    - `g1_hands_cfg.py`: configuración del robot (entidad, joints, sensores, etc.).
+    - `meshes/*.STL`: geometría del cuerpo y manos (izquierda y derecha).
+  - `src/mjlab/asset_zoo/robots/robot_hands/`
+    - `g1_with_hands_constants.py`: constantes del robot/manos (DOF, nombres de joints, etc.).
+    - `inspire_hand_*.urdf`, `inspire_hand_left/right.xml`: definición detallada de las manos.
+    - `meshes/*.STL` y `xmls/*`: versiones alternativas de XMLs/meshes para inspección.
 
-Or try in [Google Colab](https://colab.research.google.com/github/mujocolab/mjlab/blob/main/notebooks/demo.ipynb) (no local setup required).
+- **Tarea de balance / velocity para G1 Hands:**
+  - `src/mjlab/tasks/balance_manipulation/`
+    - `config/g1/__init__.py`  
+      Registra las tareas:
+      - `Mjlab-Velocity-Flat-G1-Hands`
+      - `Mjlab-Velocity-Rough-G1-Hands`
+    - `config/g1/env_cfgs.py`  
+      Configuración del entorno (escena, robot, sensores, terrenos, episodios, etc.).
+    - `config/g1/rl_cfg.py`  
+      Configuración de PPO/RSL-RL (`experiment_name="g1_hands_velocity"`).
+    - `velocity_env_cfg.py`  
+      Ensambla el entorno de velocidad usando el MDP de `balance_manipulation`.
+    - `mdp/observations.py`, `mdp/rewards.py`, `mdp/terminations.py`, `mdp/curriculums.py`, `mdp/velocity_command.py`  
+      Definen observaciones, recompensas, condiciones de terminación, currículum y comandos de velocidad.
+    - `rl/runner.py`  
+      Runner específico para esta tarea (basado en `VelocityOnPolicyRunner`).
+    - `Verificaciones/`  
+      Scripts para comprobar que todo está bien:
+      - `g1_inspect.py`, `g1_with_hands.py`, `g1_hands_inspect.py`
+      - `verify_g1_constants.py`, `verify_g1_hands_env.py`
 
-**Install from source:**
+---
 
-```bash
-git clone https://github.com/mujocolab/mjlab.git && cd mjlab
-uv run demo
-```
+## 2. Task IDs que debes usar
 
-For alternative installation methods (PyPI, Docker), see the [Installation Guide](https://mujocolab.github.io/mjlab/source/installation.html).
+Tareas registradas en `config/g1/__init__.py`:
 
-## Training Examples
+- `Mjlab-Velocity-Flat-G1-Hands`  → terreno plano.
+- `Mjlab-Velocity-Rough-G1-Hands` → terreno irregular.
 
-### 1. Velocity Tracking
+Son los `task_id` que debes pasar al script `train`.
 
-Train a Unitree G1 humanoid to follow velocity commands on flat terrain:
+---
 
-```bash
-uv run train Mjlab-Velocity-Flat-Unitree-G1 --env.scene.num-envs 4096
-```
+## 3. Cómo entrenar en tu laptop (`~/mjlab`)
 
-**Multi-GPU Training:** Scale to multiple GPUs using `--gpu-ids`:
-
-```bash
-uv run train Mjlab-Velocity-Flat-Unitree-G1 \
-  --gpu-ids 0 1 \
-  --env.scene.num-envs 4096
-```
-
-See the [Distributed Training guide](https://mujocolab.github.io/mjlab/source/distributed_training.html) for details.
-
-Evaluate a policy while training (fetches latest checkpoint from Weights & Biases):
-
-```bash
-uv run play Mjlab-Velocity-Flat-Unitree-G1 --wandb-run-path your-org/mjlab/run-id
-```
-
-### 2. Motion Imitation
-
-Train a humanoid to mimic reference motions. mjlab uses WandB to manage motion datasets.
-See the [motion preprocessing documentation](https://github.com/HybridRobotics/whole_body_tracking/blob/main/README.md#motion-preprocessing--registry-setup) for setup instructions.
-
-```bash
-uv run train Mjlab-Tracking-Flat-Unitree-G1 --registry-name your-org/motions/motion-name --env.scene.num-envs 4096
-uv run play Mjlab-Tracking-Flat-Unitree-G1 --wandb-run-path your-org/mjlab/run-id
-```
-
-### 3. Sanity-check with Dummy Agents
-
-Use built-in agents to sanity check your MDP before training:
+Asumiendo que estás en el repo original `~/mjlab` y ya tienes el entorno `mjlab_nonhuman` configurado:
 
 ```bash
-uv run play Mjlab-Your-Task-Id --agent zero  # Sends zero actions
-uv run play Mjlab-Your-Task-Id --agent random  # Sends uniform random actions
+cd ~/mjlab
+conda activate mjlab_nonhuman
+export MUJOCO_GL=egl  # si usas GPU sin pantalla
+
+# Terreno plano:
+uv run train Mjlab-Velocity-Flat-G1-Hands --env.scene.num-envs 4096
+
+# Terreno irregular:
+# uv run train Mjlab-Velocity-Rough-G1-Hands --env.scene.num-envs 4096
 ```
 
-When running motion-tracking tasks, add `--registry-name your-org/motions/motion-name` to the command.
+Puedes ajustar `--env.scene.num-envs` según la memoria de tu GPU.
 
+---
 
-## Community Projects
+## 4. Cómo entrenar en el servidor (`VELOCITY_RL`)
 
-mjlab is used for research and robotics applications around the world. Examples:
+En el servidor clonaste este mismo código como `VELOCITY_RL`.  
+Normalmente estás trabajando en `/tmp/VELOCITY_RL` para evitar problemas de permisos.
 
-<table>
-  <tr>
-    <td>
-      <a href="https://github.com/menloresearch/asimov-mjlab">
-        menloresearch/asimov-mjlab
-        <br /><img
-          alt="GitHub stars"
-          src="https://img.shields.io/github/stars/menloresearch/asimov-mjlab?style=social"
-        />
-      </a>
-    </td>
-    <td>Locomotion fork for the Asimov bipedal robot.</td>
-  </tr>
-  <tr>
-    <td>
-      <a href="http://husky-humanoid.github.io/">
-        HUSKY
-      </a>
-      <br />
-      <a href="https://github.com/mujocolab/mjlab/discussions/572">#572</a>
-      ·
-      <a href="https://arxiv.org/abs/2602.03205">Paper</a>
-    </td>
-    <td>
-      Humanoid skateboarding with dynamic balance control.
-    </td>
-  </tr>
-  <tr>
-    <td>
-      <a href="https://github.com/Nagi-ovo/mjlab-homierl">
-        Nagi-ovo/mjlab-homierl
-        <br /><img
-          alt="GitHub stars"
-          src="https://img.shields.io/github/stars/Nagi-ovo/mjlab-homierl?style=social"
-        />
-      </a>
-    </td>
-    <td>Multi-task H1 locomotion (walk/squat/stand) with upper-body disturbance robustness.</td>
-  </tr>
-  <tr>
-    <td>
-      <a href="https://github.com/MyoHub/mjlab_myosuite">
-        MyoHub/mjlab_myosuite
-        <br /><img
-          alt="GitHub stars"
-          src="https://img.shields.io/github/stars/MyoHub/mjlab_myosuite?style=social"
-        />
-      </a>
-    </td>
-    <td>Musculoskeletal simulation integration with MyoSuite.</td>
-  </tr>
-  <tr>
-    <td>
-      <a href="https://github.com/MarcDcls/mjlab_upkie">
-        MarcDcls/mjlab_upkie
-        <br /><img
-          alt="GitHub stars"
-          src="https://img.shields.io/github/stars/MarcDcls/mjlab_upkie?style=social"
-        />
-      </a>
-    </td>
-    <td>Velocity control for the Upkie wheeled biped.</td>
-  </tr>
-  <tr>
-    <td>
-      <a href="https://github.com/unitreerobotics/unitree_rl_mjlab">
-        unitreerobotics/unitree_rl_mjlab
-        <br /><img
-          alt="GitHub stars"
-          src="https://img.shields.io/github/stars/unitreerobotics/unitree_rl_mjlab?style=social"
-        />
-      </a>
-    </td>
-    <td>Official Unitree RL environments for Go2, G1, and H1_2.</td>
-  </tr>
-</table>
+### 4.1. Instalación rápida (solo primera vez)
 
-Want to share your project? Post in [Show and Tell](https://github.com/mujocolab/mjlab/discussions/categories/show-and-tell)!
-
-## Documentation
-
-Full documentation is available at **[mujocolab.github.io/mjlab](https://mujocolab.github.io/mjlab/)**.
-
-## Development
+Desde la raíz del repo en el servidor:
 
 ```bash
-make test          # Run all tests
-make test-fast     # Skip slow tests
-make format        # Format and lint
-make docs          # Build docs locally
+cd /tmp/VELOCITY_RL
+bash install_server.sh
 ```
 
-For development setup: `uvx pre-commit install`
+Esto crea/usa el entorno `mjlab_nonhuman` y deja todo instalado.
 
-## Citation
+### 4.2. Entrenar
 
-If you use mjlab in your research, please cite:
+Cada vez que quieras entrenar:
 
-```bibtex
-@misc{zakka2026mjlablightweightframeworkgpuaccelerated,
-  title={mjlab: A Lightweight Framework for GPU-Accelerated Robot Learning},
-  author={Kevin Zakka and Qiayuan Liao and Brent Yi and Louis Le Lay and Koushil Sreenath and Pieter Abbeel},
-  year={2026},
-  eprint={2601.22074},
-  archivePrefix={arXiv},
-  primaryClass={cs.RO},
-  url={https://arxiv.org/abs/2601.22074},
-}
+```bash
+cd /tmp/VELOCITY_RL
+conda activate mjlab_nonhuman
+export MUJOCO_GL=egl
+
+python -m mjlab.scripts.train Mjlab-Velocity-Flat-G1-Hands --env.scene.num-envs 4096
 ```
 
-## License
+Terreno irregular:
 
-mjlab is licensed under the [Apache License, Version 2.0](LICENSE).
+```bash
+python -m mjlab.scripts.train Mjlab-Velocity-Rough-G1-Hands --env.scene.num-envs 4096
+```
 
-### Third-Party Code
+### 4.3. Dejar entrenando aunque cierres SSH
 
-Some portions of mjlab are forked from external projects:
+Con `nohup`:
 
-- **`src/mjlab/utils/lab_api/`** — Utilities forked from [NVIDIA Isaac
-  Lab](https://github.com/isaac-sim/IsaacLab) (BSD-3-Clause license, see file
-  headers)
+```bash
+cd /tmp/VELOCITY_RL
+conda activate mjlab_nonhuman
+export MUJOCO_GL=egl
 
-Forked components retain their original licenses. See file headers for details.
+nohup python -m mjlab.scripts.train \
+  Mjlab-Velocity-Flat-G1-Hands \
+  --env.scene.num-envs 4096 > train.log 2>&1 &
+```
 
-## Acknowledgments
+Ver progreso:
 
-mjlab wouldn't exist without the excellent work of the Isaac Lab team, whose API
-design and abstractions mjlab builds upon.
+```bash
+tail -f train.log
+```
 
-Thanks to the MuJoCo Warp team — especially Erik Frey and Taylor Howell — for
-answering our questions, giving helpful feedback, and implementing features
-based on our requests countless times.
+Con `tmux`:
+
+```bash
+tmux new -s g1_hands_train
+conda activate mjlab_nonhuman
+export MUJOCO_GL=egl
+cd /tmp/VELOCITY_RL
+python -m mjlab.scripts.train Mjlab-Velocity-Flat-G1-Hands --env.scene.num-envs 4096
+# Detach: Ctrl+B, luego D
+# Re-attach: tmux attach -t g1_hands_train
+```
+
+---
+
+## 5. Reanudar entrenamientos (resume)
+
+Los logs y checkpoints se guardan en:
+
+- `logs/rsl_rl/g1_hands_velocity/AAAA-MM-DD_HH-MM-SS_*`
+
+### 5.1. Ver las runs disponibles
+
+```bash
+ls logs/rsl_rl/g1_hands_velocity/
+```
+
+### 5.2. Reanudar desde la última run (automático)
+
+Laptop (`uv`):
+
+```bash
+cd ~/mjlab
+conda activate mjlab_nonhuman
+export MUJOCO_GL=egl
+
+uv run train Mjlab-Velocity-Flat-G1-Hands \
+  --env.scene.num-envs 4096 \
+  --agent.resume True
+```
+
+Servidor:
+
+```bash
+cd /tmp/VELOCITY_RL
+conda activate mjlab_nonhuman
+export MUJOCO_GL=egl
+
+python -m mjlab.scripts.train \
+  Mjlab-Velocity-Flat-G1-Hands \
+  --env.scene.num-envs 4096 \
+  --agent.resume True
+```
+
+### 5.3. Reanudar una run concreta
+
+```bash
+ls logs/rsl_rl/g1_hands_velocity/
+# Ejemplo: 2026-03-01_15-18-27
+
+python -m mjlab.scripts.train \
+  Mjlab-Velocity-Flat-G1-Hands \
+  --env.scene.num-envs 4096 \
+  --agent.resume True \
+  --agent.load-run "2026-03-01_15-18-27"
+```
+
+---
+
+## 6. Scripts de verificación
+
+Desde la raíz del repo:
+
+```bash
+cd src/mjlab/tasks/balance_manipulation/Verificaciones
+conda activate mjlab_nonhuman
+```
+
+- Verificar constantes del robot G1 + manos:
+
+```bash
+python verify_g1_constants.py
+```
+
+- Verificar entorno `balance_manipulation` con G1 Hands:
+
+```bash
+python verify_g1_hands_env.py
+```
+
+- Inspeccionar visualmente el modelo:
+
+```bash
+python g1_with_hands.py
+python g1_hands_inspect.py
+python g1_inspect.py
+```
+
+---
+
+## 7. WandB (Weights & Biases)
+
+### 7.1. Activar logging
+
+Una vez por máquina (laptop y servidor):
+
+```bash
+conda activate mjlab_nonhuman
+wandb login
+```
+
+O usando variable de entorno:
+
+```bash
+export WANDB_API_KEY=TU_API_KEY
+```
+
+### 7.2. Desactivar WandB (por ejemplo en el servidor)
+
+```bash
+export WANDB_MODE=disabled
+```
+
+---
+
+## 8. Mini resumen rápido para ti
+
+- **Task IDs:** `Mjlab-Velocity-Flat-G1-Hands`, `Mjlab-Velocity-Rough-G1-Hands`.
+- **Robot + manos:** `src/mjlab/asset_zoo/robots/g1_hands/` y `src/mjlab/asset_zoo/robots/robot_hands/`.
+- **Tarea completa:** `src/mjlab/tasks/balance_manipulation/`.
+- **Laptop:** `uv run train ...` desde `~/mjlab`.
+- **Servidor:** `python -m mjlab.scripts.train ...` desde `/tmp/VELOCITY_RL`, con `conda activate mjlab_nonhuman` y `export MUJOCO_GL=egl`.
+
