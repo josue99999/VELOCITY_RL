@@ -6,7 +6,7 @@ Está pensado como recordatorio para ti mismo de TODO lo que tocaste y cómo vol
 
 ---
 
-## 1. Dónde están tus cambios
+
 
 - **Robot G1 con manos:**
   - `src/mjlab/asset_zoo/robots/g1_hands/`
@@ -250,11 +250,4 @@ export WANDB_MODE=disabled
 
 ---
 
-## 8. Mini resumen rápido para ti
-
-- **Task IDs:** `Mjlab-Velocity-Flat-G1-Hands`, `Mjlab-Velocity-Rough-G1-Hands`.
-- **Robot + manos:** `src/mjlab/asset_zoo/robots/g1_hands/` y `src/mjlab/asset_zoo/robots/robot_hands/`.
-- **Tarea completa:** `src/mjlab/tasks/balance_manipulation/`.
-- **Laptop:** `uv run train ...` desde `~/mjlab`.
-- **Servidor:** `python -m mjlab.scripts.train ...` desde `/tmp/VELOCITY_RL`, con `conda activate mjlab_nonhuman` y `export MUJOCO_GL=egl`.
 
