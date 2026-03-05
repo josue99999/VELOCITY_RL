@@ -92,16 +92,64 @@ def commands_vel(
   }
 
 
-def reward_weight(
+def get_current_phase(env: ManagerBasedRlEnv, phases: dict) -> dict:
+  """Helper to determine the current curriculum phase based on episode count."""
+  # Convert global steps to estimated episodes
+  episodes = env.common_step_counter / env.max_episode_length
+
+  current_phase_key = None
+  for phase_name, phase_info in phases.items():
+    min_ep, max_ep = phase_info["episode_range"]
+    if min_ep <= episodes < max_ep:
+      current_phase_key = phase_name
+      break
+
+  # Default to the last phase if we exceed all ranges
+  if current_phase_key is None:
+    current_phase_key = list(phases.keys())[-1]
+
+  return phases[current_phase_key]
+
+
+def update_teleop_pushes(
   env: ManagerBasedRlEnv,
   env_ids: torch.Tensor,
-  reward_name: str,
-  weight_stages: list[RewardWeightStage],
-) -> torch.Tensor:
-  """Update a reward term's weight based on training step stages."""
+  phases: dict,
+  push_event_name: str = "push_robot",
+) -> dict[str, torch.Tensor]:
+  """Update push event parameters based on curriculum phases."""
   del env_ids  # Unused.
-  reward_term_cfg = env.reward_manager.get_term_cfg(reward_name)
-  for stage in weight_stages:
-    if env.common_step_counter > stage["step"]:
-      reward_term_cfg.weight = stage["weight"]
-  return torch.tensor([reward_term_cfg.weight])
+  phase = get_current_phase(env, phases)
+
+  push_vel = phase.get("push_velocity", 0.0)
+  push_interval = phase.get("push_interval", (1.0, 3.0))
+
+  # Get the push event config
+  try:
+    event_cfg = env.event_manager.get_term_cfg(push_event_name)
+    
+    # Update physical parameters in the config
+    # This affects future triggers of the 'interval' mode event
+    if "velocity_range" in event_cfg.params:
+        v_range = event_cfg.params["velocity_range"]
+        # Update x, y, z ranges based on push_vel
+        # We preserve the signs/directions from the original config
+        v_range["x"] = (-push_vel, push_vel)
+        v_range["y"] = (-push_vel, push_vel)
+        # We can also scale others if desired, but x/y are most critical for stability
+        
+    # Update interval if specified
+    if isinstance(push_interval, (tuple, list)):
+        event_cfg.interval_range_s = push_interval
+    elif isinstance(push_interval, (float, int)):
+        # If it's a single number, we create a small range around it
+        event_cfg.interval_range_s = (push_interval * 0.8, push_interval * 1.2)
+        
+  except ValueError:
+    # Push event might not exist in this specific robot config
+    pass
+
+  return {
+    "push_velocity": torch.tensor(push_vel),
+    "is_pushing": torch.tensor(1.0 if push_vel > 0 else 0.0),
+  }

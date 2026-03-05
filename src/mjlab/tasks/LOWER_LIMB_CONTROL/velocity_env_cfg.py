@@ -44,6 +44,66 @@ CONTROLLED_JOINTS = (
   "waist_pitch_joint",
 )
 
+# Joints and bodies for curriculum perturbations (arms, hands, fingers)
+ARM_AND_HAND_JOINTS = (
+  ".*_shoulder_.*",
+  ".*_elbow_joint",
+  ".*_wrist_.*",
+  ".*_thumb_.*",
+  ".*_index_.*",
+  ".*_middle_.*",
+  ".*_ring_.*",
+  ".*_pinky_.*",
+)
+
+ARM_AND_HAND_BODIES = (
+  ".*_shoulder_.*",
+  ".*_elbow_.*",
+  ".*_wrist_.*",
+  ".*_hand_.*",
+  ".*_thumb_.*",
+  ".*_index_.*",
+  ".*_middle_.*",
+  ".*_ring_.*",
+  ".*_pinky_.*",
+)
+
+CURRICULUM_PHASES = {
+  "phase_0_stability": {
+    "episode_range": (0, 5000),
+    "arm_randomization": False,
+    "push_velocity": 0.0,
+  },
+  "phase_1_arm_pose": {
+    "episode_range": (5000, 15000),
+    "arm_randomization": True,
+    "arm_pose_range": 0.5,
+    "push_velocity": 0.0,
+  },
+  "phase_2_arm_dynamics": {
+    "episode_range": (15000, 25000),
+    "arm_randomization": True,
+    "arm_pose_range": 1.0,
+    "arm_mass_range": (0.5, 2.0),
+    "push_velocity": 0.0,
+  },
+  "phase_3_external_disturbances": {
+    "episode_range": (25000, 40000),
+    "arm_randomization": True,
+    "arm_pose_range": 1.5,
+    "arm_mass_range": (0.3, 3.0),
+    "push_velocity": 1.0,
+  },
+  "phase_4_teleop_robust": {
+    "episode_range": (40000, float("inf")),
+    "arm_randomization": True,
+    "arm_pose_range": 2.0,
+    "arm_mass_range": (0.1, 5.0),
+    "push_velocity": 2.5,
+    "push_interval": (1.5, 2.5),
+  },
+}
+
 
 def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
   """Create base velocity tracking task configuration for lower limb control."""
@@ -240,6 +300,22 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         },
       },
     ),
+    "randomize_arm_pose": EventTermCfg(
+      func=mdp.events.randomize_arm_pose_phase_based,
+      mode="reset",
+      params={
+        "phases": CURRICULUM_PHASES,
+        "asset_cfg": SceneEntityCfg("robot", joint_names=ARM_AND_HAND_JOINTS),
+      },
+    ),
+    "randomize_arm_mass": EventTermCfg(
+      func=mdp.events.randomize_arm_mass_phase_based,
+      mode="reset",
+      params={
+        "phases": CURRICULUM_PHASES,
+        "asset_cfg": SceneEntityCfg("robot", body_names=ARM_AND_HAND_BODIES),
+      },
+    ),
   }
 
   ##
@@ -375,6 +451,13 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         ],
       },
     ),
+    "teleop_disturbances": CurriculumTermCfg(
+      func=mdp.update_teleop_pushes,
+      params={
+        "phases": CURRICULUM_PHASES,
+        "push_event_name": "push_robot",
+      },
+    ),
   }
 
   ##
@@ -400,7 +483,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         max_init_terrain_level=5,
       ),
       sensors=(terrain_scan,),
-      num_envs=1,
+      num_envs=4096,
       extent=2.0,
     ),
     observations=observations,
