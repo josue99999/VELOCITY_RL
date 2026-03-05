@@ -464,6 +464,10 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "push_event_name": "push_robot",
       },
     ),
+    "phase_info": CurriculumTermCfg(
+      func=mdp.log_phase_curriculum,
+      params={"phases": CURRICULUM_PHASES},
+    ),
   }
 
   ##

@@ -153,3 +153,43 @@ def update_teleop_pushes(
     "push_velocity": torch.tensor(push_vel),
     "is_pushing": torch.tensor(1.0 if push_vel > 0 else 0.0),
   }
+
+
+def log_phase_curriculum(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor,
+  phases: dict,
+) -> dict[str, torch.Tensor]:
+  """Return current phase metrics for WandB (arm pose, mass, phase index)."""
+  del env_ids  # Unused.
+  episodes = env.common_step_counter / env.max_episode_length
+  phase_names = list(phases.keys())
+  current_phase_key = None
+  phase_index = 0
+  for i, phase_name in enumerate(phase_names):
+    min_ep, max_ep = phases[phase_name]["episode_range"]
+    if min_ep <= episodes < max_ep:
+      current_phase_key = phase_name
+      phase_index = i
+      break
+  if current_phase_key is None:
+    phase_index = len(phase_names) - 1
+    current_phase_key = phase_names[-1]
+  phase = phases[current_phase_key]
+
+  arm_rand = 1.0 if phase.get("arm_randomization", False) else 0.0
+  pose_range = float(phase.get("arm_pose_range", 0.0))
+  mass_range = phase.get("arm_mass_range")
+  if mass_range is not None:
+    mass_min, mass_max = float(mass_range[0]), float(mass_range[1])
+  else:
+    mass_min, mass_max = 0.0, 0.0
+
+  return {
+    "phase_index": torch.tensor(phase_index),
+    "arm_randomization": torch.tensor(arm_rand),
+    "arm_pose_range": torch.tensor(pose_range),
+    "arm_mass_min": torch.tensor(mass_min),
+    "arm_mass_max": torch.tensor(mass_max),
+    "episodes_approx": torch.tensor(episodes),
+  }
