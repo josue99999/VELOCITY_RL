@@ -28,7 +28,6 @@ from mjlab.terrains.config import ROUGH_TERRAINS_CFG
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
 from mjlab.viewer import ViewerConfig
 
-
 # Controlled joints (Lower limb + waist for stability).
 # 6 leg patterns × 2 sides = 12 DOF.
 # 3 waist joints = 3 DOF.

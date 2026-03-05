@@ -6,8 +6,6 @@ from mjlab.asset_zoo.robots.robot_hands.g1_with_hands_constants import (
   G1_ACTION_SCALE,
   get_g1_robot_cfg,
 )
-
-
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as envs_mdp
 from mjlab.envs.mdp.actions import JointPositionActionCfg

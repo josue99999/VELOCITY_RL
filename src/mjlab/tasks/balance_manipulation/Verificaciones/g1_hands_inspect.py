@@ -9,8 +9,9 @@ Uso:
 """
 
 import os
-import time
 import threading
+import time
+
 import mujoco
 import mujoco.viewer
 

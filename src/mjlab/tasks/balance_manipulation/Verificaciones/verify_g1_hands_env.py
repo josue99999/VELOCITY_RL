@@ -23,25 +23,23 @@ Comprueba:
 
 import re
 import sys
-from pathlib import Path
 
 # ── Forzar uso del repo en ~/mjlab ───────────────────────────────────────────
 sys.path.insert(0, "/home/josu/mjlab/src")
 
 import mujoco
-import numpy as np
 
 # ── Importar constantes del robot ─────────────────────────────────────────────
 try:
+  from mjlab.actuator import BuiltinPositionActuatorCfg
   from mjlab.asset_zoo.robots.robot_hands.g1_with_hands_constants import (
+    _FINGER_MIMICS,
     G1_ACTION_SCALE,
     G1_ARTICULATION,
     HOME_KEYFRAME,
     KNEES_BENT_KEYFRAME,
-    _FINGER_MIMICS,
     get_spec,
   )
-  from mjlab.actuator import BuiltinPositionActuatorCfg
 except ImportError as e:
   print(f"[ERROR] No se pudo importar g1_with_hands_constants: {e}")
   sys.exit(1)
@@ -200,7 +198,7 @@ if missing_body or missing_prox or missing_mimic:
     print(f"    {FAIL} falta: {j}")
   results["2_joints"] = FAIL
 else:
-  print(f"    Todos los joints esperados presentes.")
+  print("    Todos los joints esperados presentes.")
   results["2_joints"] = PASS
 
 
@@ -240,7 +238,7 @@ extra_actuated = [
 print(f"    Patrones de actuadores definidos: {len(all_patterns)}")
 print(f"    Joints a actuar esperados: {len(joints_to_actuate)}")
 print(
-  f"    (nu=0 es normal — mjlab inyecta actuadores al compilar EntityCfg, no en XML crudo)"
+  "    (nu=0 es normal — mjlab inyecta actuadores al compilar EntityCfg, no en XML crudo)"
 )
 
 if not_covered:
@@ -248,7 +246,7 @@ if not_covered:
     print(f"    {FAIL} sin actuador: {j}")
   results["3_actuators"] = FAIL
 else:
-  print(f"    Todos los joints a actuar están cubiertos por patrones.")
+  print("    Todos los joints a actuar están cubiertos por patrones.")
   results["3_actuators"] = PASS
 
 # Verificar G1_ACTION_SCALE no vacío
@@ -271,7 +269,7 @@ if missing_sites:
     print(f"    {FAIL} site faltante: {s}")
   results["4_foot_sites"] = FAIL
 else:
-  print(f"    ✓ left_foot y right_foot presentes.")
+  print("    ✓ left_foot y right_foot presentes.")
   results["4_foot_sites"] = PASS
 
 
@@ -290,7 +288,7 @@ if missing_foot_geoms:
     print(f"    {FAIL} geom faltante: {g}")
   results["5_foot_geoms"] = FAIL
 else:
-  print(f"    ✓ 14 geoms de pie (left/right_foot1-7_collision) presentes.")
+  print("    ✓ 14 geoms de pie (left/right_foot1-7_collision) presentes.")
   results["5_foot_geoms"] = PASS
 
 
@@ -307,7 +305,7 @@ if missing_hand_geoms:
     print(f"    {FAIL} geom faltante: {g}")
   results["6_hand_geoms"] = FAIL
 else:
-  print(f"    ✓ L_hand_base_col y R_hand_base_col presentes.")
+  print("    ✓ L_hand_base_col y R_hand_base_col presentes.")
   results["6_hand_geoms"] = PASS
 
 
@@ -339,7 +337,7 @@ if eq_joint_errors:
     print(f"    {FAIL} {e}")
   results["7_equalities"] += " (joint refs FAIL)"
 else:
-  print(f"    ✓ Todos los slave/master de equalities existen en el modelo.")
+  print("    ✓ Todos los slave/master de equalities existen en el modelo.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -370,7 +368,7 @@ for e in knees_errors:
   print(f"    KNEES_BENT: {FAIL} {e}")
 
 if not home_errors and not knees_errors:
-  print(f"    ✓ Todos los patrones de keyframes matchean joints existentes.")
+  print("    ✓ Todos los patrones de keyframes matchean joints existentes.")
   results["8_keyframes"] = PASS
 else:
   results["8_keyframes"] = FAIL
@@ -446,7 +444,7 @@ if actor_dim > 1000:
     f"    {WARN} obs actor muy grande ({actor_dim}), considera reducir height_scan o num_joints."
   )
 else:
-  print(f"    ✓ Dimensiones dentro de rangos normales.")
+  print("    ✓ Dimensiones dentro de rangos normales.")
 
 results["10_network"] = PASS
 

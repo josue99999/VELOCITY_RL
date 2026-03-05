@@ -295,6 +295,7 @@ if isinstance(hand_actuator, BuiltinPositionActuatorCfg):
 
 if __name__ == "__main__":
   import mujoco.viewer as viewer
+
   from mjlab.entity.entity import Entity
 
   robot = Entity(get_g1_hands_robot_cfg())

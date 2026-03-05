@@ -8,12 +8,9 @@ from typing import Literal
 
 import torch
 import tyro
-from rsl_rl.runners import OnPolicyRunner
-
-from mjlab.rl import MjlabOnPolicyRunner
 
 from mjlab.envs import ManagerBasedRlEnv
-from mjlab.rl import RslRlVecEnvWrapper
+from mjlab.rl import MjlabOnPolicyRunner, RslRlVecEnvWrapper
 from mjlab.tasks.registry import list_tasks, load_env_cfg, load_rl_cfg, load_runner_cls
 from mjlab.tasks.tracking.mdp import MotionCommandCfg
 from mjlab.utils.os import get_wandb_checkpoint_path

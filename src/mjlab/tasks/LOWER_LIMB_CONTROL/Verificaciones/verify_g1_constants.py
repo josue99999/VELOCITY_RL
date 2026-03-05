@@ -10,11 +10,11 @@ Uso:
   python verify_g1_constants.py
 """
 
-import numpy as np
-import mujoco
-
 import sys
 from pathlib import Path
+
+import mujoco
+import numpy as np
 
 # Añade el directorio donde está g1_with_hands_constants.py
 _CONSTANTS_DIR = (
@@ -24,10 +24,10 @@ sys.path.insert(0, str(_CONSTANTS_DIR))
 
 
 from g1_with_hands_constants import (
-  get_spec,
+  _FINGER_MIMICS,
   G1_ARTICULATION,
   KNEES_BENT_KEYFRAME,
-  _FINGER_MIMICS,
+  get_spec,
 )
 
 
@@ -74,7 +74,7 @@ for actuator_cfg in G1_ARTICULATION.actuators:
     ok = len(matches) > 0
     print(f"  {check_mark(ok)}  pattern '{pattern}' → {len(matches)} joints")
     if not ok:
-      print(f"       ⚠ No se encontró ningún joint con este patrón")
+      print("       ⚠ No se encontró ningún joint con este patrón")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ missing = [n for n, *_ in _FINGER_MIMICS if n not in eq_names]
 if missing:
   print(f"\n  ⚠ Faltan {len(missing)} equalities — revisa get_spec()")
 else:
-  print(f"\n  Todos los mimics inyectados correctamente")
+  print("\n  Todos los mimics inyectados correctamente")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

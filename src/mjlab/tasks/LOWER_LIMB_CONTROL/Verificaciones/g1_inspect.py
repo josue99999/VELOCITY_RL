@@ -9,11 +9,12 @@ Uso:
 """
 
 import os
-import time
 import threading
-import numpy as np
+import time
+
 import mujoco
 import mujoco.viewer
+import numpy as np
 
 # ── Rutas ──────────────────────────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
