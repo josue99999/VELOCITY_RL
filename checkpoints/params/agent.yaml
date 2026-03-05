@@ -12,9 +12,9 @@ run_name: ''
 logger: wandb
 wandb_project: mjlab
 wandb_tags: !!python/tuple []
-resume: false
-load_run: .*
-load_checkpoint: model_.*.pt
+resume: true
+load_run: 2026-03-05_02-55-31
+load_checkpoint: model_12200.pt
 clip_actions: null
 class_name: OnPolicyRunner
 actor:
