@@ -41,5 +41,6 @@ def unitree_g1_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
     experiment_name="g1_lower_limb_velocity",
     save_interval=50,
     num_steps_per_env=24,
-    max_iterations=30_000,
+    # Extended to allow reaching late curriculum phases (up to phase_4_teleop_robust).
+    max_iterations=60_000,
   )

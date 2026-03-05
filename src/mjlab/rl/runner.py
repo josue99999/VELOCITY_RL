@@ -110,5 +110,6 @@ class MjlabOnPolicyRunner(OnPolicyRunner):
 
     infos = loaded_dict["infos"]
     if infos and "env_state" in infos:
-      self.env.unwrapped.common_step_counter = infos["env_state"]["common_step_counter"]
+      # Reset curriculum so it starts from phase 0; policy/optimizer stay from checkpoint.
+      self.env.unwrapped.common_step_counter = 0
     return infos

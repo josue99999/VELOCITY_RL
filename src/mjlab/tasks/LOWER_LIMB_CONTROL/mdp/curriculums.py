@@ -127,24 +127,24 @@ def update_teleop_pushes(
   # Get the push event config
   try:
     event_cfg = env.event_manager.get_term_cfg(push_event_name)
-    
+
     # Update physical parameters in the config
     # This affects future triggers of the 'interval' mode event
     if "velocity_range" in event_cfg.params:
-        v_range = event_cfg.params["velocity_range"]
-        # Update x, y, z ranges based on push_vel
-        # We preserve the signs/directions from the original config
-        v_range["x"] = (-push_vel, push_vel)
-        v_range["y"] = (-push_vel, push_vel)
-        # We can also scale others if desired, but x/y are most critical for stability
-        
+      v_range = event_cfg.params["velocity_range"]
+      # Update x, y, z ranges based on push_vel
+      # We preserve the signs/directions from the original config
+      v_range["x"] = (-push_vel, push_vel)
+      v_range["y"] = (-push_vel, push_vel)
+      # We can also scale others if desired, but x/y are most critical for stability
+
     # Update interval if specified
     if isinstance(push_interval, (tuple, list)):
-        event_cfg.interval_range_s = push_interval
+      event_cfg.interval_range_s = push_interval
     elif isinstance(push_interval, (float, int)):
-        # If it's a single number, we create a small range around it
-        event_cfg.interval_range_s = (push_interval * 0.8, push_interval * 1.2)
-        
+      # If it's a single number, we create a small range around it
+      event_cfg.interval_range_s = (push_interval * 0.8, push_interval * 1.2)
+
   except ValueError:
     # Push event might not exist in this specific robot config
     pass

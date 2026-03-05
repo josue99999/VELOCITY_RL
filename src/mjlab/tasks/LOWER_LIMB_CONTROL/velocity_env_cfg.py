@@ -68,37 +68,43 @@ ARM_AND_HAND_BODIES = (
   ".*_pinky_.*",
 )
 
+# Phases use episodes = common_step_counter / max_episode_length.
+# With num_steps_per_env=24 and max_episode_length=1000: episodes ≈ 0.024 * iterations.
+# Ranges below are chosen so phases match iteration counts in WandB/terminal:
+#   Phase 0: iters 0–500 | 1: 500–18k | 2: 18k–34k | 3: 34k–44k | 4: 44k+
 CURRICULUM_PHASES = {
   "phase_0_stability": {
-    "episode_range": (0, 5000),
+    "episode_range": (0, 12),
     "arm_randomization": False,
     "push_velocity": 0.0,
   },
   "phase_1_arm_pose": {
-    "episode_range": (5000, 15000),
+    "episode_range": (12, 432),
     "arm_randomization": True,
     "arm_pose_range": 0.5,
     "push_velocity": 0.0,
   },
   "phase_2_arm_dynamics": {
-    "episode_range": (15000, 25000),
+    "episode_range": (432, 816),
     "arm_randomization": True,
     "arm_pose_range": 1.0,
-    "arm_mass_range": (0.5, 2.0),
-    "push_velocity": 0.0,
+    "arm_mass_range": (0.7, 1.5),
+    "push_velocity": 0.35,
+    "push_interval": (2.5, 4.0),
   },
   "phase_3_external_disturbances": {
-    "episode_range": (25000, 40000),
+    "episode_range": (816, 1056),
     "arm_randomization": True,
     "arm_pose_range": 1.5,
-    "arm_mass_range": (0.3, 3.0),
-    "push_velocity": 1.0,
+    "arm_mass_range": (0.5, 2.0),
+    "push_velocity": 1.2,
+    "push_interval": (2.0, 3.0),
   },
   "phase_4_teleop_robust": {
-    "episode_range": (40000, float("inf")),
+    "episode_range": (1056, float("inf")),
     "arm_randomization": True,
     "arm_pose_range": 2.0,
-    "arm_mass_range": (0.1, 5.0),
+    "arm_mass_range": (0.3, 3.0),
     "push_velocity": 2.5,
     "push_interval": (1.5, 2.5),
   },
