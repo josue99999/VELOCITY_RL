@@ -5,7 +5,6 @@ import pytest
 from mjlab.asset_zoo.robots import G1_ACTION_SCALE, GO1_ACTION_SCALE
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.tasks.registry import list_tasks, load_env_cfg
-from mjlab.tasks.velocity.mdp import UniformVelocityCommandCfg
 
 
 @pytest.fixture(scope="module")

@@ -4,9 +4,9 @@ import types
 from pathlib import Path
 
 import torch
-from torch.distributions import Normal
 from rsl_rl.env import VecEnv
 from rsl_rl.runners import OnPolicyRunner
+from torch.distributions import Normal
 
 from mjlab.rl.vecenv_wrapper import RslRlVecEnvWrapper
 
@@ -34,7 +34,7 @@ def _debug_log(data: dict) -> None:
       os.makedirs(dirpath, exist_ok=True)
     with open(_DEBUG_LOG_PATH, "a") as f:
       f.write(line)
-  except Exception as e:
+  except Exception:
     pass
   # Always echo to stderr so we get evidence even if file path is wrong.
   if payload.get("message") in (
