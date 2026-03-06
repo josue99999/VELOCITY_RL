@@ -14,6 +14,7 @@ from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg, RayCastSensorCfg
 from mjlab.tasks.LOWER_LIMB_CONTROL import mdp
 from mjlab.tasks.LOWER_LIMB_CONTROL.mdp import UniformVelocityCommandCfg
+from mjlab.terrains.config import ROUGH_TERRAINS_H1_2_CFG
 from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.velocity_env_cfg import (
   CONTROLLED_JOINTS,
   make_velocity_env_cfg,
@@ -27,6 +28,11 @@ def unitree_h1_2_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.sim.mujoco.ccd_iterations = 500
   cfg.sim.contact_sensor_maxmatch = 500
   cfg.sim.nconmax = 45
+
+  # Coarser heightfield to avoid "height field collision overflow" (H1_2 has 14
+  # foot geoms; MuJoCo limits 50 contacts per geom-hfield pair).
+  if cfg.scene.terrain is not None and cfg.scene.terrain.terrain_generator is not None:
+    cfg.scene.terrain.terrain_generator = ROUGH_TERRAINS_H1_2_CFG
 
   cfg.scene.entities = {"robot": get_h1_2_robot_cfg()}
 

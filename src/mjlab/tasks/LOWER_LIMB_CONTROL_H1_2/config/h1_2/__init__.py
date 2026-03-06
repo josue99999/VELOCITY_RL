@@ -1,5 +1,5 @@
-from mjlab.tasks.registry import register_mjlab_task
 from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.rl import VelocityOnPolicyRunner
+from mjlab.tasks.registry import register_mjlab_task
 
 from .env_cfgs import (
   unitree_h1_2_flat_env_cfg,

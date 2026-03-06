@@ -45,12 +45,9 @@ def ok(cond: bool) -> str:
 section("1. Carga de configuración")
 
 try:
-  from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.velocity_env_cfg import (
-    ARM_AND_HAND_BODIES,
-    ARM_AND_HAND_JOINTS,
-    CONTROLLED_JOINTS,
-    CURRICULUM_PHASES,
-    OBSERVED_JOINTS,
+  from mjlab.asset_zoo.robots.robot_hands.h1_2_with_hands_constants import (
+    H1_2_ACTION_SCALE,
+    get_spec,
   )
   from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.config.h1_2.env_cfgs import (
     unitree_h1_2_flat_env_cfg,
@@ -59,11 +56,13 @@ try:
   from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.config.h1_2.rl_cfg import (
     unitree_h1_2_ppo_runner_cfg,
   )
-  from mjlab.tasks.registry import list_tasks, load_env_cfg, load_rl_cfg
-  from mjlab.asset_zoo.robots.robot_hands.h1_2_with_hands_constants import (
-    H1_2_ACTION_SCALE,
-    get_spec,
+  from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.velocity_env_cfg import (
+    ARM_AND_HAND_JOINTS,
+    CONTROLLED_JOINTS,
+    CURRICULUM_PHASES,
+    OBSERVED_JOINTS,
   )
+  from mjlab.tasks.registry import list_tasks, load_env_cfg
 
   print(f"  {PASS} Imports OK")
   results["1_imports"] = PASS
