@@ -69,43 +69,41 @@ ARM_AND_HAND_BODIES = (
 )
 
 # Phases use episodes = common_step_counter / max_episode_length.
-# With num_steps_per_env=24 and max_episode_length=1000: episodes ≈ 0.024 * iterations.
-# Ranges below are chosen so phases match iteration counts in WandB/terminal:
-#   Phase 0: iters 0–500 | 1: 500–18k | 2: 18k–34k | 3: 34k–44k | 4: 44k+
+# common_step_counter += 1 per env step; 24 steps/iter → ~0.024 episodes/iter.
+#
+# Episode ranges:
+# - 60K iters: ~1440 episodes total → (0, 360), (360, 720), (720, 1080), (1080, inf) (~15K iters/fase).
+# - For short tests override max_iterations and use smaller ranges (e.g. 0.12, 0.24, 0.36, inf).
+# Phase 4 push_velocity 1.5 (test); use 2.5 for production if desired.
 CURRICULUM_PHASES = {
-  "phase_0_stability": {
-    "episode_range": (0, 12),
-    "arm_randomization": False,
-    "push_velocity": 0.0,
-  },
   "phase_1_arm_pose": {
-    "episode_range": (12, 432),
+    "episode_range": (0, 360),
     "arm_randomization": True,
     "arm_pose_range": 0.5,
     "push_velocity": 0.0,
   },
   "phase_2_arm_dynamics": {
-    "episode_range": (432, 816),
+    "episode_range": (360, 720),
     "arm_randomization": True,
     "arm_pose_range": 1.0,
     "arm_mass_range": (0.7, 1.5),
-    "push_velocity": 0.35,
+    "push_velocity": 0.2,
     "push_interval": (2.5, 4.0),
   },
   "phase_3_external_disturbances": {
-    "episode_range": (816, 1056),
+    "episode_range": (720, 1080),
     "arm_randomization": True,
     "arm_pose_range": 1.5,
     "arm_mass_range": (0.5, 2.0),
-    "push_velocity": 1.2,
+    "push_velocity": 0.4,  # 0.6 was causing value explosion/NaN; use 0.6 for production if stable.
     "push_interval": (2.0, 3.0),
   },
   "phase_4_teleop_robust": {
-    "episode_range": (1056, float("inf")),
+    "episode_range": (1080, float("inf")),
     "arm_randomization": True,
     "arm_pose_range": 2.0,
     "arm_mass_range": (0.3, 3.0),
-    "push_velocity": 2.5,
+    "push_velocity": 1.5,
     "push_interval": (1.5, 2.5),
   },
 }
@@ -493,7 +491,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         max_init_terrain_level=5,
       ),
       sensors=(terrain_scan,),
-      num_envs=4096,
+      num_envs=1024,  # Lower default for 6GB GPUs; override with --env.scene.num_envs 4096
       extent=2.0,
     ),
     observations=observations,
@@ -522,4 +520,5 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     decimation=4,
     episode_length_s=20.0,
+    reward_clip=2.0,  # Very tight clip so curriculum test (fast phases) finishes without std blowup
   )

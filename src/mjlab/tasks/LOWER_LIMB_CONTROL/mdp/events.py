@@ -29,7 +29,11 @@ def randomize_arm_pose_phase_based(
   phases: dict,
   asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> None:
-  """Randomize the arm positions at reset according to the current phase."""
+  """Randomize the arm joint positions at reset according to the current phase.
+
+  Called once per environment per reset (i.e. at the start of each new episode).
+  Only the env_ids that are reset in this step get new random arm poses.
+  """
   phase = get_current_phase(env, phases)
 
   if not phase.get("arm_randomization", False):
@@ -41,28 +45,25 @@ def randomize_arm_pose_phase_based(
 
   asset = env.scene[asset_cfg.name]
 
-  # We want to identify the arm joints. Assuming standard naming convention like "*_arm_*" or similar.
-  # Alternatively, any joint NOT in the CONTROLLED_JOINTS could be treated as an arm joint.
-  # We will let the config pass the specific joint names in asset_cfg.joint_names
-
-  # Getting the joint indices
-  joint_ids = asset.joints(asset_cfg.joint_names)
+  joint_ids, _ = asset.find_joints(asset_cfg.joint_names)
   if len(joint_ids) == 0:
     return
 
-  # Get current joint positions
-  joint_pos = asset.data.qpos[env_ids][:, asset.qpos_joint_indices[joint_ids]]
+  default_joint_pos = asset.data.default_joint_pos
+  assert default_joint_pos is not None
+  soft_joint_pos_limits = asset.data.soft_joint_pos_limits
+  assert soft_joint_pos_limits is not None
 
-  # Sample random offsets uniformly in [-pose_range, pose_range]
-  offsets = (torch.rand_like(joint_pos) * 2.0 - 1.0) * pose_range
-
-  # Set the new positions
+  joint_pos = default_joint_pos[env_ids][:, joint_ids].clone()
+  offsets = (torch.rand_like(joint_pos, device=env.device) * 2.0 - 1.0) * pose_range
   new_joint_pos = joint_pos + offsets
+  pos_limits = soft_joint_pos_limits[env_ids][:, joint_ids]
+  new_joint_pos = new_joint_pos.clamp_(pos_limits[..., 0], pos_limits[..., 1])
 
-  # TODO: Respect joint limits if needed, or simply let the physics engine clamp it.
-
+  joint_ids_tensor = torch.tensor(joint_ids, device=env.device, dtype=torch.long)
+  velocity = torch.zeros_like(new_joint_pos, device=env.device)
   asset.write_joint_state_to_sim(
-    position=new_joint_pos, joint_ids=joint_ids, env_ids=env_ids
+    new_joint_pos, velocity, joint_ids=joint_ids_tensor, env_ids=env_ids
   )
 
 
@@ -82,26 +83,17 @@ def randomize_arm_mass_phase_based(
 
   asset = env.scene[asset_cfg.name]
 
-  # Get the body names for the arms from asset_cfg
-  body_ids = asset.bodies(asset_cfg.body_names)
-  if len(body_ids) == 0:
+  body_ids_local, _ = asset.find_bodies(asset_cfg.body_names)
+  if len(body_ids_local) == 0:
     return
 
-  # Get nominal mass from the generic model
-  nominal_mass = asset.mj_model.body_mass[body_ids]
-  nominal_mass = torch.tensor(nominal_mass, device=env.device, dtype=torch.float32)
+  body_ids_tensor = torch.tensor(body_ids_local, device=env.device, dtype=torch.long)
+  global_body_ids = asset.data.indexing.body_ids[body_ids_tensor]
+  nominal_mass = env.sim.model.body_mass[0, global_body_ids].float().to(env.device)
 
-  # Broadcast to envs
-  # Env specific model fields are shape [num_envs, field_dim]
-
-  # Sample random mass multipliers
   min_mult, max_mult = mass_range
   multipliers = (
     torch.rand((len(env_ids), 1), device=env.device) * (max_mult - min_mult) + min_mult
   )
-
-  # Calculate new mass
   new_mass = nominal_mass.unsqueeze(0) * multipliers
-
-  # Assign new mass to the specific environments and bodies
-  env.sim.model.body_mass[env_ids.unsqueeze(-1), body_ids] = new_mass
+  env.sim.model.body_mass[env_ids.unsqueeze(-1), global_body_ids] = new_mass

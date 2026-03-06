@@ -185,8 +185,9 @@ def log_phase_curriculum(
   else:
     mass_min, mass_max = 0.0, 0.0
 
+  # phase_index 1-based (1..4) so "fase 4" shows as 4 in logs/WandB.
   return {
-    "phase_index": torch.tensor(phase_index),
+    "phase_index": torch.tensor(phase_index + 1),
     "arm_randomization": torch.tensor(arm_rand),
     "arm_pose_range": torch.tensor(pose_range),
     "arm_mass_min": torch.tensor(mass_min),

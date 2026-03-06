@@ -110,14 +110,22 @@ def body_angular_velocity_penalty(
 def angular_momentum_penalty(
   env: ManagerBasedRlEnv,
   sensor_name: str,
+  max_magnitude: float = 100.0,
 ) -> torch.Tensor:
-  """Penalize whole-body angular momentum to encourage natural arm swing."""
+  """Penalize whole-body angular momentum to encourage natural arm swing.
+
+  Clamped to max_magnitude to avoid reward explosion (e.g. when robot falls).
+  """
   angmom_sensor: BuiltinSensor = env.scene[sensor_name]
   angmom = angmom_sensor.data
   angmom_magnitude_sq = torch.sum(torch.square(angmom), dim=-1)
   angmom_magnitude = torch.sqrt(angmom_magnitude_sq)
-  env.extras["log"]["Metrics/angular_momentum_mean"] = torch.mean(angmom_magnitude)
-  return angmom_magnitude_sq
+  _mean = torch.nanmean(angmom_magnitude).nan_to_num(nan=0.0)
+  env.extras["log"]["Metrics/angular_momentum_mean"] = float(
+    torch.clamp(_mean, max=500.0).item()
+  )
+  angmom_magnitude = torch.clamp(angmom_magnitude, max=max_magnitude)
+  return angmom_magnitude * angmom_magnitude
 
 
 def feet_air_time(
@@ -140,7 +148,7 @@ def feet_air_time(
   mean_air_time = torch.sum(current_air_time * in_air.float()) / torch.clamp(
     num_in_air, min=1
   )
-  env.extras["log"]["Metrics/air_time_mean"] = mean_air_time
+  env.extras["log"]["Metrics/air_time_mean"] = mean_air_time.nan_to_num(nan=0.0)
   if command_name is not None:
     command = env.command_manager.get_command(command_name)
     if command is not None:
@@ -220,7 +228,7 @@ class feet_swing_height:
     mean_peak_height = torch.sum(peak_heights_at_landing) / torch.clamp(
       num_landings, min=1
     )
-    env.extras["log"]["Metrics/peak_height_mean"] = mean_peak_height
+    env.extras["log"]["Metrics/peak_height_mean"] = mean_peak_height.nan_to_num(nan=0.0)
     self.peak_heights = torch.where(
       first_contact,
       torch.zeros_like(self.peak_heights),
@@ -255,7 +263,7 @@ def feet_slip(
   mean_slip_vel = torch.sum(vel_xy_norm * in_contact) / torch.clamp(
     num_in_contact, min=1
   )
-  env.extras["log"]["Metrics/slip_velocity_mean"] = mean_slip_vel
+  env.extras["log"]["Metrics/slip_velocity_mean"] = mean_slip_vel.nan_to_num(nan=0.0)
   return cost
 
 
@@ -276,7 +284,9 @@ def soft_landing(
   cost = torch.sum(landing_impact, dim=1)  # [B]
   num_landings = torch.sum(first_contact.float())
   mean_landing_force = torch.sum(landing_impact) / torch.clamp(num_landings, min=1)
-  env.extras["log"]["Metrics/landing_force_mean"] = mean_landing_force
+  env.extras["log"]["Metrics/landing_force_mean"] = mean_landing_force.nan_to_num(
+    nan=0.0
+  )
   if command_name is not None:
     command = env.command_manager.get_command(command_name)
     if command is not None:
