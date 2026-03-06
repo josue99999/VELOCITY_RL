@@ -9,12 +9,11 @@ LOWER_LIMB_CONTROL_H1_2/
 │   ├── __init__.py          # Re-exporta envs.mdp + curriculums, events, rewards, etc.
 │   ├── curriculums.py       # terrain_levels_vel, commands_vel, update_teleop_pushes, log_phase_curriculum
 │   ├── events.py            # randomize_arm_pose_phase_based, randomize_arm_mass_phase_based
-│   ├── rewards.py           # (hereda de LOWER_LIMB_CONTROL)
-│   ├── observations.py      # (hereda de LOWER_LIMB_CONTROL)
-│   ├── terminations.py      # (hereda de LOWER_LIMB_CONTROL)
+│   ├── rewards.py           # track_linear/angular_velocity, feet_*, etc.
+│   ├── observations.py  # foot_height, foot_air_time, foot_contact
+│   ├── terminations.py   # illegal_contact
 │   └── velocity_command.py  # UniformVelocityCommand
 ├── config/
-│   ├── g1/__init__.py       # Vacío (G1 se registra en LOWER_LIMB_CONTROL)
 │   └── h1_2/
 │       ├── __init__.py      # Registra Mjlab-Velocity-{Rough,Flat}-H1_2-LowerLimb
 │       ├── env_cfgs.py      # unitree_h1_2_rough_env_cfg, unitree_h1_2_flat_env_cfg
@@ -25,9 +24,9 @@ LOWER_LIMB_CONTROL_H1_2/
 
 ## Dependencias
 
-- **velocity_env_cfg** importa `mdp` de `LOWER_LIMB_CONTROL` (no de LOWER_LIMB_CONTROL_H1_2).
-- **config/h1_2/env_cfgs** importa `mdp` de `LOWER_LIMB_CONTROL` para rewards (self_collision_cost).
-- **mdp/events** en LOWER_LIMB_CONTROL_H1_2 tiene `randomize_arm_pose_phase_based` y `randomize_arm_mass_phase_based`; velocity_env_cfg usa `mdp.events.*` que resuelve a LOWER_LIMB_CONTROL.mdp (ambos tienen las mismas funciones).
+- **velocity_env_cfg** importa `mdp` de `LOWER_LIMB_CONTROL_H1_2` (propio de la carpeta).
+- **config/h1_2/env_cfgs** importa `mdp` de `LOWER_LIMB_CONTROL_H1_2` (self_collision_cost, etc.).
+- **mdp/events** en LOWER_LIMB_CONTROL_H1_2 tiene `randomize_arm_pose_phase_based` y `randomize_arm_mass_phase_based`; velocity_env_cfg usa `mdp.events.*` del mdp local.
 
 ## Constantes clave
 
@@ -36,7 +35,7 @@ LOWER_LIMB_CONTROL_H1_2/
 | CONTROLLED_JOINTS | 7 patrones | 13 DOF: piernas (12) + torso (1) |
 | OBSERVED_JOINTS | 15 patrones | CONTROLLED + brazos/manos (39 joints en modelo) |
 | ARM_AND_HAND_JOINTS | 8 patrones | Para curriculum (arm pose/mass) |
-| CURRICULUM_PHASES | 4 fases | phase_1 → phase_4 por episodios |
+| CURRICULUM_PHASES | 5 fases | phase_0_baseline → phase_4_teleop_robust |
 
 ## Flujo de datos
 

@@ -12,8 +12,8 @@ from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.event_manager import EventTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg, RayCastSensorCfg
-from mjlab.tasks.LOWER_LIMB_CONTROL import mdp
-from mjlab.tasks.LOWER_LIMB_CONTROL.mdp import UniformVelocityCommandCfg
+from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2 import mdp
+from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.mdp import UniformVelocityCommandCfg
 from mjlab.terrains.config import ROUGH_TERRAINS_H1_2_CFG
 from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.velocity_env_cfg import (
   CONTROLLED_JOINTS,

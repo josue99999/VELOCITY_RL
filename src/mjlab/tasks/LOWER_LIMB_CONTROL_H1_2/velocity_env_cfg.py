@@ -21,8 +21,8 @@ from mjlab.managers.termination_manager import TerminationTermCfg
 from mjlab.scene import SceneCfg
 from mjlab.sensor import GridPatternCfg, ObjRef, RayCastSensorCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
-from mjlab.tasks.LOWER_LIMB_CONTROL import mdp
-from mjlab.tasks.LOWER_LIMB_CONTROL.mdp import UniformVelocityCommandCfg
+from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2 import mdp
+from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.mdp import UniformVelocityCommandCfg
 from mjlab.terrains import TerrainImporterCfg
 from mjlab.terrains.config import ROUGH_TERRAINS_CFG
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
