@@ -155,6 +155,33 @@ def update_teleop_pushes(
   }
 
 
+def update_arm_teleop_continuous(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor,
+  phases: dict,
+  event_name: str = "arm_pose_continuous_teleop",
+) -> dict[str, torch.Tensor]:
+  """Update arm continuous teleop event params from curriculum phase (for training)."""
+  del env_ids  # Unused.
+  phase = get_current_phase(env, phases)
+  max_delta = phase.get("arm_teleop_max_delta", 0.0)
+  main_arm_scale = phase.get("arm_teleop_main_arm_scale", 1.0)
+  interval_range_s = phase.get("arm_teleop_interval_range_s", (0.02, 0.02))
+  try:
+    event_cfg = env.event_manager.get_term_cfg(event_name)
+    event_cfg.params["max_delta"] = max_delta
+    event_cfg.params["main_arm_scale"] = main_arm_scale
+    if isinstance(interval_range_s, (tuple, list)) and len(interval_range_s) >= 2:
+      event_cfg.interval_range_s = (interval_range_s[0], interval_range_s[1])
+  except ValueError:
+    pass
+  return {
+    "arm_teleop_max_delta": torch.tensor(max_delta),
+    "arm_teleop_main_arm_scale": torch.tensor(main_arm_scale),
+    "arm_teleop_active": torch.tensor(1.0 if max_delta > 0 else 0.0),
+  }
+
+
 def log_phase_curriculum(
   env: ManagerBasedRlEnv,
   env_ids: torch.Tensor,
@@ -184,8 +211,16 @@ def log_phase_curriculum(
     mass_min, mass_max = float(mass_range[0]), float(mass_range[1])
   else:
     mass_min, mass_max = 0.0, 0.0
+  arm_teleop_max_delta = float(phase.get("arm_teleop_max_delta", 0.0))
+  arm_teleop_main_arm_scale = float(phase.get("arm_teleop_main_arm_scale", 1.0))
+  # Last applied values (from arm_pose_continuous_teleop) to verify they are random/changing.
+  arm_log = getattr(env, "_arm_teleop_log", {})
+  delta_norm = arm_log.get("delta_norm", 0.0)
+  delta_mean_abs = arm_log.get("delta_mean_abs", 0.0)
+  pose_sample_mean = arm_log.get("pose_sample_mean", 0.0)
+  pose_sample_std = arm_log.get("pose_sample_std", 0.0)
 
-  # phase_index 1-based (1..4) so "fase 4" shows as 4 in logs/WandB.
+  # phase_index 1-based; arm_teleop_* for WandB so you can verify poses are being sent.
   return {
     "phase_index": torch.tensor(phase_index + 1),
     "arm_randomization": torch.tensor(arm_rand),
@@ -193,4 +228,11 @@ def log_phase_curriculum(
     "arm_mass_min": torch.tensor(mass_min),
     "arm_mass_max": torch.tensor(mass_max),
     "episodes_approx": torch.tensor(episodes),
+    "arm_teleop_max_delta": torch.tensor(arm_teleop_max_delta),
+    "arm_teleop_main_arm_scale": torch.tensor(arm_teleop_main_arm_scale),
+    "arm_teleop_active": torch.tensor(1.0 if arm_teleop_max_delta > 0 else 0.0),
+    "arm_teleop_last_delta_norm": torch.tensor(delta_norm),
+    "arm_teleop_last_delta_mean_abs": torch.tensor(delta_mean_abs),
+    "arm_teleop_last_pose_mean": torch.tensor(pose_sample_mean),
+    "arm_teleop_last_pose_std": torch.tensor(pose_sample_std),
   }
