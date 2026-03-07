@@ -201,7 +201,10 @@ def unitree_g1_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   if play:
     twist_cmd = cfg.commands["twist"]
     assert isinstance(twist_cmd, UniformVelocityCommandCfg)
-    twist_cmd.ranges.lin_vel_x = (-1.5, 2.0)
-    twist_cmd.ranges.ang_vel_z = (-0.7, 0.7)
+    twist_cmd.ranges.lin_vel_x = (0.2, 0.5)
+    twist_cmd.ranges.lin_vel_y = (-0.15, 0.15)
+    twist_cmd.ranges.ang_vel_z = (-0.25, 0.25)
+    twist_cmd.resampling_time_range = (15.0, 25.0)
+    twist_cmd.viz.scale = 0.2
 
   return cfg

@@ -69,42 +69,41 @@ ARM_AND_HAND_BODIES = (
 )
 
 # Phases use episodes = common_step_counter / max_episode_length.
-# common_step_counter += 1 per env step; 24 steps/iter → ~0.024 episodes/iter.
-#
-# Episode ranges:
-# - 60K iters: ~1440 episodes total → (0, 360), (360, 720), (720, 1080), (1080, inf) (~15K iters/fase).
-# - For short tests override max_iterations and use smaller ranges (e.g. 0.12, 0.24, 0.36, inf).
-# Phase 4 push_velocity 1.5 (test); use 2.5 for production if desired.
+# ~0.024 episodes/iter → 20k iters ≈ 480 episodes per phase.
+# Phase 0: learn to walk with no perturbations; then phase 1–2: teleop robustness.
 CURRICULUM_PHASES = {
-  "phase_1_arm_pose": {
-    "episode_range": (0, 360),
+  "phase_0_walking": {
+    "episode_range": (0, 480),
+    "arm_randomization": False,
+    "arm_pose_range": 0.0,
+    "arm_mass_range": (1.0, 1.0),
+    "push_velocity": 0.0,
+    "push_interval": (10.0, 20.0),
+    "arm_teleop_max_delta": 0.0,
+    "arm_teleop_main_arm_scale": 1.0,
+    "arm_teleop_interval_range_s": (0.1, 0.1),
+  },
+  "phase_1_teleop_light": {
+    "episode_range": (480, 960),
     "arm_randomization": True,
     "arm_pose_range": 0.5,
-    "push_velocity": 0.0,
+    "arm_mass_range": (0.8, 1.2),
+    "push_velocity": 0.15,
+    "push_interval": (3.0, 5.0),
+    "arm_teleop_max_delta": 0.04,
+    "arm_teleop_main_arm_scale": 2.0,
+    "arm_teleop_interval_range_s": (0.02, 0.02),
   },
-  "phase_2_arm_dynamics": {
-    "episode_range": (360, 720),
+  "phase_2_teleop_strong": {
+    "episode_range": (960, float("inf")),
     "arm_randomization": True,
     "arm_pose_range": 1.0,
-    "arm_mass_range": (0.7, 1.5),
-    "push_velocity": 0.2,
-    "push_interval": (2.5, 4.0),
-  },
-  "phase_3_external_disturbances": {
-    "episode_range": (720, 1080),
-    "arm_randomization": True,
-    "arm_pose_range": 1.5,
-    "arm_mass_range": (0.5, 2.0),
-    "push_velocity": 0.4,  # 0.6 was causing value explosion/NaN; use 0.6 for production if stable.
-    "push_interval": (2.0, 3.0),
-  },
-  "phase_4_teleop_robust": {
-    "episode_range": (1080, float("inf")),
-    "arm_randomization": True,
-    "arm_pose_range": 2.0,
-    "arm_mass_range": (0.3, 3.0),
-    "push_velocity": 1.5,
-    "push_interval": (1.5, 2.5),
+    "arm_mass_range": (0.6, 1.5),
+    "push_velocity": 0.4,
+    "push_interval": (2.0, 3.5),
+    "arm_teleop_max_delta": 0.08,
+    "arm_teleop_main_arm_scale": 3.0,
+    "arm_teleop_interval_range_s": (0.01, 0.01),
   },
 }
 
@@ -320,6 +319,16 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "asset_cfg": SceneEntityCfg("robot", body_names=ARM_AND_HAND_BODIES),
       },
     ),
+    "arm_pose_continuous_teleop": EventTermCfg(
+      func=mdp.events.arm_pose_continuous_teleop,
+      mode="interval",
+      interval_range_s=(0.02, 0.02),
+      params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=ARM_AND_HAND_JOINTS),
+        "max_delta": 0.04,
+        "main_arm_scale": 2.0,
+      },
+    ),
   }
 
   ##
@@ -360,23 +369,23 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "body_ang_vel": RewardTermCfg(
       func=mdp.body_angular_velocity_penalty,
-      weight=0.0,  # Override per-robot
+      weight=-0.05,
       params={"asset_cfg": SceneEntityCfg("robot", body_names=())},  # Set per-robot.
     ),
     "angular_momentum": RewardTermCfg(
       func=mdp.angular_momentum_penalty,
-      weight=0.0,  # Override per-robot
+      weight=-0.01,
       params={"sensor_name": "robot/root_angmom"},
     ),
     "dof_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-1.0),
     "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1),
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=0.0,  # Override per-robot.
+      weight=0.5,
       params={
         "sensor_name": "feet_ground_contact",
-        "threshold_min": 0.05,
-        "threshold_max": 0.5,
+        "threshold_min": 0.1,
+        "threshold_max": 0.4,
         "command_name": "twist",
         "command_threshold": 0.5,
       },
@@ -414,7 +423,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "soft_landing": RewardTermCfg(
       func=mdp.soft_landing,
-      weight=-1e-5,
+      weight=-1e-4,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
@@ -460,6 +469,13 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       params={
         "phases": CURRICULUM_PHASES,
         "push_event_name": "push_robot",
+      },
+    ),
+    "arm_teleop_continuous": CurriculumTermCfg(
+      func=mdp.update_arm_teleop_continuous,
+      params={
+        "phases": CURRICULUM_PHASES,
+        "event_name": "arm_pose_continuous_teleop",
       },
     ),
     "phase_info": CurriculumTermCfg(

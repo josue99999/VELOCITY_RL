@@ -15,9 +15,12 @@ from mjlab.sensor import ContactMatch, ContactSensorCfg, RayCastSensorCfg
 from mjlab.tasks.LOWER_LIMB_CONTROL import mdp
 from mjlab.tasks.LOWER_LIMB_CONTROL.mdp import UniformVelocityCommandCfg
 from mjlab.tasks.LOWER_LIMB_CONTROL.velocity_env_cfg import (
+  ARM_AND_HAND_JOINTS,
+  CURRICULUM_PHASES,
   CONTROLLED_JOINTS,
   make_velocity_env_cfg,
 )
+from mjlab.managers.scene_entity_config import SceneEntityCfg
 
 
 def unitree_g1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
@@ -134,7 +137,7 @@ def unitree_g1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards[reward_name].params["asset_cfg"].site_names = site_names
 
   cfg.rewards["body_ang_vel"].weight = -0.05
-  cfg.rewards["angular_momentum"].weight = -0.02
+  cfg.rewards["angular_momentum"].weight = -0.01
   cfg.rewards["air_time"].weight = 1.0
 
   cfg.rewards["self_collisions"] = RewardTermCfg(
@@ -149,8 +152,21 @@ def unitree_g1_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.episode_length_s = int(1e9)
 
     cfg.observations["actor"].enable_corruption = False
-    cfg.events.pop("push_robot", None)
+    # cfg.events.pop("push_robot", None)  # Dejar empujes en play para probar perturbaciones
+    # cfg.events.pop("randomize_arm_pose", None)  # Dejar brazos aleatorios en play
+    # cfg.events.pop("randomize_arm_mass", None)
     cfg.curriculum = {}
+    # En play: movimiento continuo de brazos; hombro y codo 3x más rango.
+    cfg.events["arm_pose_continuous_teleop"] = EventTermCfg(
+      func=mdp.events.arm_pose_continuous_teleop,
+      mode="interval",
+      interval_range_s=(0.01, 0.01),
+      params={
+        "asset_cfg": SceneEntityCfg("robot", joint_names=ARM_AND_HAND_JOINTS),
+        "max_delta": 0.12,
+        "main_arm_scale": 3.0,
+      },
+    )
     cfg.events["randomize_terrain"] = EventTermCfg(
       func=envs_mdp.randomize_terrain,
       mode="reset",
@@ -194,7 +210,12 @@ def unitree_g1_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   if play:
     twist_cmd = cfg.commands["twist"]
     assert isinstance(twist_cmd, UniformVelocityCommandCfg)
-    twist_cmd.ranges.lin_vel_x = (-1.5, 2.0)
-    twist_cmd.ranges.ang_vel_z = (-0.7, 0.7)
+    # Config anterior (seguir comandos de velocidad):
+    # twist_cmd.ranges.lin_vel_x = (-1.5, 2.0)
+    # twist_cmd.ranges.ang_vel_z = (-0.7, 0.7)
+    # Probar: comando cero + perturbaciones (empujes activos en rough play).
+    twist_cmd.ranges.lin_vel_x = (0.0, 0.0)
+    twist_cmd.ranges.lin_vel_y = (0.0, 0.0)
+    twist_cmd.ranges.ang_vel_z = (0.0, 0.0)
 
   return cfg

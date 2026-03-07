@@ -753,6 +753,11 @@ class Entity:
       env_ids = slice(None)
     if joint_ids is None:
       joint_ids = slice(None)
+    # When both are 1D tensors, expand so we index a (N, J) block, not element-wise.
+    if isinstance(env_ids, torch.Tensor) and isinstance(joint_ids, torch.Tensor):
+      if env_ids.dim() == 1 and joint_ids.dim() == 1:
+        env_ids = env_ids.unsqueeze(1)
+        joint_ids = joint_ids.unsqueeze(0)
     self._data.joint_pos_target[env_ids, joint_ids] = position
 
   def set_joint_velocity_target(
@@ -772,6 +777,10 @@ class Entity:
       env_ids = slice(None)
     if joint_ids is None:
       joint_ids = slice(None)
+    if isinstance(env_ids, torch.Tensor) and isinstance(joint_ids, torch.Tensor):
+      if env_ids.dim() == 1 and joint_ids.dim() == 1:
+        env_ids = env_ids.unsqueeze(1)
+        joint_ids = joint_ids.unsqueeze(0)
     self._data.joint_vel_target[env_ids, joint_ids] = velocity
 
   def set_joint_effort_target(
@@ -791,6 +800,10 @@ class Entity:
       env_ids = slice(None)
     if joint_ids is None:
       joint_ids = slice(None)
+    if isinstance(env_ids, torch.Tensor) and isinstance(joint_ids, torch.Tensor):
+      if env_ids.dim() == 1 and joint_ids.dim() == 1:
+        env_ids = env_ids.unsqueeze(1)
+        joint_ids = joint_ids.unsqueeze(0)
     self._data.joint_effort_target[env_ids, joint_ids] = effort
 
   def set_tendon_len_target(

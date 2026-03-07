@@ -196,6 +196,10 @@ class feet_swing_height:
     )
     self.step_dt = env.step_dt
 
+  def reset(self, env_ids: torch.Tensor) -> None:
+    """Zero peak heights for reset envs so new episodes do not use stale state."""
+    self.peak_heights[env_ids] = 0.0
+
   def __call__(
     self,
     env: ManagerBasedRlEnv,
