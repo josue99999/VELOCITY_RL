@@ -140,6 +140,10 @@ class ManagerBasedRlEnvCfg:
   algorithms that expect unscaled reward signals (e.g., HER, static reward scaling).
   """
 
+  reward_clip: float | None = None
+  """If set, clip step rewards to [-reward_clip, reward_clip] to avoid policy
+  instability from exploding returns (e.g. under strong disturbances)."""
+
 
 class ManagerBasedRlEnv:
   """Manager-based RL environment."""
@@ -385,6 +389,10 @@ class ManagerBasedRlEnv:
     self.reset_time_outs = self.termination_manager.time_outs
 
     self.reward_buf = self.reward_manager.compute(dt=self.step_dt)
+    if self.cfg.reward_clip is not None:
+      self.reward_buf = torch.clamp(
+        self.reward_buf, -self.cfg.reward_clip, self.cfg.reward_clip
+      )
     self.metrics_manager.compute()
 
     # Reset envs that terminated/timed-out and log the episode info.

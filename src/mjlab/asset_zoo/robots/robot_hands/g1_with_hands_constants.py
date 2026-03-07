@@ -11,7 +11,6 @@ from pathlib import Path
 
 import mujoco
 
-from mjlab import MJLAB_SRC_PATH
 from mjlab.actuator import BuiltinPositionActuatorCfg
 from mjlab.entity import EntityArticulationInfoCfg, EntityCfg
 from mjlab.utils.actuator import (
@@ -338,6 +337,7 @@ for a in G1_ARTICULATION.actuators:
 
 if __name__ == "__main__":
   import mujoco.viewer as viewer
+
   from mjlab.entity.entity import Entity
 
   robot = Entity(get_g1_robot_cfg())
