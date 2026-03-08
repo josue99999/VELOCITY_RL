@@ -7,6 +7,7 @@ import torch
 from mjlab.entity import Entity
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 
+from .events import get_current_phase
 from .velocity_command import UniformVelocityCommandCfg
 
 if TYPE_CHECKING:
@@ -92,23 +93,90 @@ def commands_vel(
   }
 
 
-def get_current_phase(env: ManagerBasedRlEnv, phases: dict) -> dict:
-  """Helper to determine the current curriculum phase based on episode count."""
-  # Convert global steps to estimated episodes
+def _get_current_phase_key(env: ManagerBasedRlEnv, phases: dict) -> str:
+  """Return current phase key (name) for threshold lookup."""
   episodes = env.common_step_counter / env.max_episode_length
-
-  current_phase_key = None
+  offset = getattr(env, "_episode_offset", 0)
+  effective_episodes = episodes - offset
   for phase_name, phase_info in phases.items():
     min_ep, max_ep = phase_info["episode_range"]
-    if min_ep <= episodes < max_ep:
-      current_phase_key = phase_name
-      break
+    if min_ep <= effective_episodes < max_ep:
+      return phase_name
+  return list(phases.keys())[-1]
 
-  # Default to the last phase if we exceed all ranges
-  if current_phase_key is None:
-    current_phase_key = list(phases.keys())[-1]
 
-  return phases[current_phase_key]
+# Thresholds (reward_threshold, fell_over_threshold) per phase for gatekeeping.
+_PHASE_THRESHOLDS: dict[str, tuple[float, float]] = {
+  "light_disturbances": (45.0, 0.12),
+  "moderate_disturbances": (48.0, 0.15),
+  "full_robustness": (50.0, 0.18),
+}
+_DEFAULT_THRESHOLDS = (45.0, 0.15)
+
+
+def update_episode_offset(
+  env: ManagerBasedRlEnv,
+  metrics: dict | None,
+  phases: dict,
+  offset_increment: float = 10.0,
+  max_offset: float = 500.0,
+) -> None:
+  """Gatekeeping: increase episode_offset when metrics are bad so phase advance slows.
+  Sets env._phase_frozen for WandB logging. Call from runner with env._curriculum_metrics.
+  """
+  if metrics is None:
+    setattr(env, "_phase_frozen", False)
+    return
+
+  phase_key = _get_current_phase_key(env, phases)
+  reward_threshold, fell_over_threshold = _PHASE_THRESHOLDS.get(
+    phase_key, _DEFAULT_THRESHOLDS
+  )
+
+  mean_reward = metrics.get("mean_reward")
+  value_loss = metrics.get("value_loss")
+  fell_over_rate = metrics.get("fell_over_rate")
+
+  bad = False
+  if mean_reward is not None and mean_reward < reward_threshold:
+    bad = True
+  if value_loss is not None:
+    v = value_loss
+    if isinstance(v, torch.Tensor):
+      if torch.isnan(v).any() or torch.isinf(v).any():
+        bad = True
+    elif v != v or v == float("inf"):
+      bad = True
+  if fell_over_rate is not None and fell_over_rate > fell_over_threshold:
+    bad = True
+
+  if bad:
+    offset = getattr(env, "_episode_offset", 0)
+    setattr(env, "_episode_offset", min(offset + offset_increment, max_offset))
+    setattr(env, "_phase_frozen", True)
+  else:
+    setattr(env, "_phase_frozen", False)
+
+
+def gatekeeping_phase_control(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor,
+  phases: dict,
+) -> dict[str, torch.Tensor]:
+  """Curriculum term that updates episode offset based on metrics.
+  Expects env._curriculum_metrics to be set by the runner after each iteration.
+  """
+  metrics = getattr(env, "_curriculum_metrics", None)
+  update_episode_offset(env, metrics, phases)
+  return {
+    "episode_offset": torch.tensor(
+      float(getattr(env, "_episode_offset", 0)), dtype=torch.float32
+    ),
+    "phase_frozen": torch.tensor(
+      1.0 if getattr(env, "_phase_frozen", False) else 0.0,
+      dtype=torch.float32,
+    ),
+  }
 
 
 def update_teleop_pushes(
@@ -117,41 +185,50 @@ def update_teleop_pushes(
   phases: dict,
   push_event_name: str = "push_robot",
 ) -> dict[str, torch.Tensor]:
-  """Update push event parameters based on curriculum phases."""
+  """Update push event parameters based on curriculum phases.
+  Stress-aware: reduce push when robot already oscillating (high ang_vel).
+  """
   del env_ids  # Unused.
   phase = get_current_phase(env, phases)
 
   push_vel = phase.get("push_velocity", 0.0)
   push_interval = phase.get("push_interval", (1.0, 3.0))
 
-  # Get the push event config
+  # Stress-aware scaling: reduce push when robot already oscillating (ang_vel high).
+  if push_vel > 0:
+    asset = env.scene["robot"]
+    ang_vel_mag = torch.norm(asset.data.root_link_ang_vel_w, dim=-1)
+    stress_factor = torch.clamp(1.0 - (ang_vel_mag / 5.0), 0.3, 1.0)
+    effective_push_vel = push_vel * stress_factor.mean().item()
+  else:
+    effective_push_vel = 0.0
+
+  # Get the push event config and scale all velocity components.
   try:
     event_cfg = env.event_manager.get_term_cfg(push_event_name)
 
-    # Update physical parameters in the config
-    # This affects future triggers of the 'interval' mode event
     if "velocity_range" in event_cfg.params:
       v_range = event_cfg.params["velocity_range"]
-      # Update x, y, z ranges based on push_vel
-      # We preserve the signs/directions from the original config
-      v_range["x"] = (-push_vel, push_vel)
-      v_range["y"] = (-push_vel, push_vel)
-      # We can also scale others if desired, but x/y are most critical for stability
+      # Base scale: 0.5 for x/y; scale z, roll, pitch, yaw proportionally.
+      scale = effective_push_vel / 0.5 if push_vel > 0 else 0.0
+      v_range["x"] = (-effective_push_vel, effective_push_vel)
+      v_range["y"] = (-effective_push_vel, effective_push_vel)
+      v_range["z"] = (-0.4 * scale, 0.4 * scale)
+      v_range["roll"] = (-0.52 * scale, 0.52 * scale)
+      v_range["pitch"] = (-0.52 * scale, 0.52 * scale)
+      v_range["yaw"] = (-0.78 * scale, 0.78 * scale)
 
-    # Update interval if specified
     if isinstance(push_interval, (tuple, list)):
       event_cfg.interval_range_s = push_interval
     elif isinstance(push_interval, (float, int)):
-      # If it's a single number, we create a small range around it
       event_cfg.interval_range_s = (push_interval * 0.8, push_interval * 1.2)
 
   except ValueError:
-    # Push event might not exist in this specific robot config
     pass
 
   return {
-    "push_velocity": torch.tensor(push_vel),
-    "is_pushing": torch.tensor(1.0 if push_vel > 0 else 0.0),
+    "push_velocity": torch.tensor(effective_push_vel),
+    "is_pushing": torch.tensor(1.0 if effective_push_vel > 0 else 0.0),
   }
 
 
@@ -187,15 +264,18 @@ def log_phase_curriculum(
   env_ids: torch.Tensor,
   phases: dict,
 ) -> dict[str, torch.Tensor]:
-  """Return current phase metrics for WandB (arm pose, mass, phase index)."""
+  """Return current phase metrics for WandB (arm pose, mass, phase index, gatekeeping)."""
   del env_ids  # Unused.
   episodes = env.common_step_counter / env.max_episode_length
+  offset = getattr(env, "_episode_offset", 0)
+  effective_episodes = episodes - offset
+
   phase_names = list(phases.keys())
   current_phase_key = None
   phase_index = 0
   for i, phase_name in enumerate(phase_names):
     min_ep, max_ep = phases[phase_name]["episode_range"]
-    if min_ep <= episodes < max_ep:
+    if min_ep <= effective_episodes < max_ep:
       current_phase_key = phase_name
       phase_index = i
       break
@@ -213,14 +293,12 @@ def log_phase_curriculum(
     mass_min, mass_max = 0.0, 0.0
   arm_teleop_max_delta = float(phase.get("arm_teleop_max_delta", 0.0))
   arm_teleop_main_arm_scale = float(phase.get("arm_teleop_main_arm_scale", 1.0))
-  # Last applied values (from arm_pose_continuous_teleop) to verify they are random/changing.
   arm_log = getattr(env, "_arm_teleop_log", {})
   delta_norm = arm_log.get("delta_norm", 0.0)
   delta_mean_abs = arm_log.get("delta_mean_abs", 0.0)
   pose_sample_mean = arm_log.get("pose_sample_mean", 0.0)
   pose_sample_std = arm_log.get("pose_sample_std", 0.0)
 
-  # phase_index 1-based; arm_teleop_* for WandB so you can verify poses are being sent.
   return {
     "phase_index": torch.tensor(phase_index + 1),
     "arm_randomization": torch.tensor(arm_rand),
@@ -228,6 +306,12 @@ def log_phase_curriculum(
     "arm_mass_min": torch.tensor(mass_min),
     "arm_mass_max": torch.tensor(mass_max),
     "episodes_approx": torch.tensor(episodes),
+    "episodes_effective": torch.tensor(effective_episodes),
+    "phase_frozen": torch.tensor(1.0 if getattr(env, "_phase_frozen", False) else 0.0),
+    "episode_offset": torch.tensor(
+      float(getattr(env, "_episode_offset", 0)),
+      dtype=torch.float32,
+    ),
     "arm_teleop_max_delta": torch.tensor(arm_teleop_max_delta),
     "arm_teleop_main_arm_scale": torch.tensor(arm_teleop_main_arm_scale),
     "arm_teleop_active": torch.tensor(1.0 if arm_teleop_max_delta > 0 else 0.0),

@@ -140,23 +140,17 @@ def unitree_h1_2_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   )
 
   # Apply play mode overrides.
+  # Play: only velocity commands, no perturbations (no pushes, no arm rand, no teleop).
   if play:
     cfg.episode_length_s = int(1e9)
 
     cfg.observations["actor"].enable_corruption = False
-    # cfg.events.pop("push_robot", None)  # Leave pushes in play to test perturbations
     cfg.curriculum = {}
-    # In play: continuous arm motion; larger range for shoulder/elbow.
-    cfg.events["arm_pose_continuous_teleop"] = EventTermCfg(
-      func=mdp.events.arm_pose_continuous_teleop,
-      mode="interval",
-      interval_range_s=(0.01, 0.01),
-      params={
-        "asset_cfg": SceneEntityCfg("robot", joint_names=ARM_AND_HAND_JOINTS),
-        "max_delta": 0.12,
-        "main_arm_scale": 3.0,
-      },
-    )
+
+    cfg.events.pop("push_robot", None)
+    cfg.events.pop("randomize_arm_pose", None)
+    cfg.events.pop("randomize_arm_mass", None)
+    cfg.events.pop("arm_pose_continuous_teleop", None)
     cfg.events["randomize_terrain"] = EventTermCfg(
       func=envs_mdp.randomize_terrain,
       mode="reset",
@@ -197,9 +191,9 @@ def unitree_h1_2_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   if play:
     twist_cmd = cfg.commands["twist"]
     assert isinstance(twist_cmd, UniformVelocityCommandCfg)
-    # Optional: zero command to test perturbations only.
-    twist_cmd.ranges.lin_vel_x = (0.0, 0.0)
-    twist_cmd.ranges.lin_vel_y = (0.0, 0.0)
-    twist_cmd.ranges.ang_vel_z = (0.0, 0.0)
+    # Only velocity commands (no perturbations).
+    twist_cmd.ranges.lin_vel_x = (-1.0, 1.0)
+    twist_cmd.ranges.lin_vel_y = (-1.0, 1.0)
+    twist_cmd.ranges.ang_vel_z = (-0.5, 0.5)
 
   return cfg

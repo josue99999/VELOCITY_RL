@@ -380,3 +380,21 @@ class variable_posture:
     error_squared = torch.square(current_joint_pos - desired_joint_pos)
 
     return torch.exp(-torch.mean(error_squared / (std**2), dim=1))
+
+
+def stable_upright_under_disturbance(
+  env: ManagerBasedRlEnv,
+  phases: dict,
+  upright_std: float = 0.25,
+  upright_threshold: float = 0.95,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Bonus when upright under active disturbances (push_velocity > 0). Zero otherwise."""
+  from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.mdp.events import get_current_phase
+
+  phase = get_current_phase(env, phases)
+  if phase.get("push_velocity", 0) <= 0:
+    return torch.zeros(env.num_envs, device=env.device, dtype=torch.float32)
+
+  upright = flat_orientation(env, std=upright_std, asset_cfg=asset_cfg)
+  return (upright > upright_threshold).float()

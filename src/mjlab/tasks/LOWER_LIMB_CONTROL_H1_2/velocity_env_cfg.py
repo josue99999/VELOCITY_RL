@@ -79,11 +79,12 @@ ARM_AND_HAND_BODIES = (
 )
 
 # Phases use episodes = common_step_counter / max_episode_length.
-# ~0.024 episodes/iter → 20k iters ≈ 480 episodes per phase.
-# Phase 0: learn to walk with no perturbations; then phase 1–2: teleop robustness.
+# Robust 6-phase curriculum: checkpoint ~756 ep starts in phase 4 (light_disturbances).
+# Fases 1–3 tienen rangos ya pasados para forzar inicio en fase 4 al reanudar.
+# arm_randomization required by randomize_arm_pose / randomize_arm_mass events.
 CURRICULUM_PHASES = {
-  "phase_0_walking": {
-    "episode_range": (0, 480),
+  "pure_walking": {
+    "episode_range": (0, 1),
     "arm_randomization": False,
     "arm_pose_range": 0.0,
     "arm_mass_range": (1.0, 1.0),
@@ -93,24 +94,57 @@ CURRICULUM_PHASES = {
     "arm_teleop_main_arm_scale": 1.0,
     "arm_teleop_interval_range_s": (0.1, 0.1),
   },
-  "phase_1_teleop_light": {
-    "episode_range": (480, 960),
+  "arm_randomization": {
+    "episode_range": (1, 2),
+    "arm_randomization": True,
+    "arm_pose_range": 0.25,
+    "arm_mass_range": (0.9, 1.1),
+    "push_velocity": 0.0,
+    "push_interval": (10.0, 20.0),
+    "arm_teleop_max_delta": 0.0,
+    "arm_teleop_main_arm_scale": 1.0,
+    "arm_teleop_interval_range_s": (0.1, 0.1),
+  },
+  "arm_pose_exploration": {
+    "episode_range": (2, 750),
     "arm_randomization": True,
     "arm_pose_range": 0.5,
     "arm_mass_range": (0.8, 1.2),
-    "push_velocity": 0.15,
-    "push_interval": (3.0, 5.0),
-    "arm_teleop_max_delta": 0.04,
+    "push_velocity": 0.0,
+    "push_interval": (10.0, 20.0),
+    "arm_teleop_max_delta": 0.02,
+    "arm_teleop_main_arm_scale": 1.5,
+    "arm_teleop_interval_range_s": (0.05, 0.05),
+  },
+  "light_disturbances": {
+    "episode_range": (750, 2000),
+    "arm_randomization": True,
+    "arm_pose_range": 0.5,
+    "arm_mass_range": (0.8, 1.2),
+    "push_velocity": 0.08,
+    "push_interval": (8.0, 15.0),
+    "arm_teleop_max_delta": 0.03,
     "arm_teleop_main_arm_scale": 2.0,
+    "arm_teleop_interval_range_s": (0.03, 0.03),
+  },
+  "moderate_disturbances": {
+    "episode_range": (2000, 3200),
+    "arm_randomization": True,
+    "arm_pose_range": 0.75,
+    "arm_mass_range": (0.7, 1.3),
+    "push_velocity": 0.15,
+    "push_interval": (5.0, 8.0),
+    "arm_teleop_max_delta": 0.05,
+    "arm_teleop_main_arm_scale": 2.5,
     "arm_teleop_interval_range_s": (0.02, 0.02),
   },
-  "phase_2_teleop_strong": {
-    "episode_range": (960, float("inf")),
+  "full_robustness": {
+    "episode_range": (3200, float("inf")),
     "arm_randomization": True,
     "arm_pose_range": 1.0,
     "arm_mass_range": (0.6, 1.5),
-    "push_velocity": 0.4,
-    "push_interval": (2.0, 3.5),
+    "push_velocity": 0.25,
+    "push_interval": (3.0, 5.0),
     "arm_teleop_max_delta": 0.08,
     "arm_teleop_main_arm_scale": 3.0,
     "arm_teleop_interval_range_s": (0.01, 0.01),
@@ -440,6 +474,11 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "command_threshold": 0.05,
       },
     ),
+    "stable_upright_under_disturbance": RewardTermCfg(
+      func=mdp.stable_upright_under_disturbance,
+      weight=0.5,
+      params={"phases": CURRICULUM_PHASES},
+    ),
   }
 
   ##
@@ -463,14 +502,17 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       func=mdp.terrain_levels_vel,
       params={"command_name": "twist"},
     ),
+    # Velocity stages más conservadores para evitar inestabilidad al subir fases.
     "command_vel": CurriculumTermCfg(
       func=mdp.commands_vel,
       params={
         "command_name": "twist",
         "velocity_stages": [
           {"step": 0, "lin_vel_x": (-1.0, 1.0), "ang_vel_z": (-0.5, 0.5)},
-          {"step": 5000 * 24, "lin_vel_x": (-1.5, 2.0), "ang_vel_z": (-0.7, 0.7)},
-          {"step": 10000 * 24, "lin_vel_x": (-2.0, 3.0)},
+          {"step": 240_000, "lin_vel_x": (-1.2, 1.5), "ang_vel_z": (-0.6, 0.6)},
+          {"step": 480_000, "lin_vel_x": (-1.5, 2.0), "ang_vel_z": (-0.65, 0.65)},
+          {"step": 720_000, "lin_vel_x": (-1.8, 2.5), "ang_vel_z": (-0.7, 0.7)},
+          {"step": 960_000, "lin_vel_x": (-2.0, 3.0), "ang_vel_z": (-0.7, 0.7)},
         ],
       },
     ),
@@ -490,6 +532,10 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "phase_info": CurriculumTermCfg(
       func=mdp.log_phase_curriculum,
+      params={"phases": CURRICULUM_PHASES},
+    ),
+    "gatekeeping": CurriculumTermCfg(
+      func=mdp.gatekeeping_phase_control,
       params={"phases": CURRICULUM_PHASES},
     ),
   }

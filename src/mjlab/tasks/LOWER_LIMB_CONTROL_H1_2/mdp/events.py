@@ -6,18 +6,20 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 
 
 def get_current_phase(env: ManagerBasedRlEnv, phases: dict) -> dict:
-  """Helper to determine the current curriculum phase based on episode count."""
-  # Convert global steps to estimated episodes
+  """Helper to determine the current curriculum phase based on episode count.
+  Uses episode_offset to slow phase advance when metrics are bad (gatekeeping).
+  """
   episodes = env.common_step_counter / env.max_episode_length
+  offset = getattr(env, "_episode_offset", 0)
+  effective_episodes = episodes - offset
 
   current_phase_key = None
   for phase_name, phase_info in phases.items():
     min_ep, max_ep = phase_info["episode_range"]
-    if min_ep <= episodes < max_ep:
+    if min_ep <= effective_episodes < max_ep:
       current_phase_key = phase_name
       break
 
-  # Default to the last phase if we exceed all ranges
   if current_phase_key is None:
     current_phase_key = list(phases.keys())[-1]
 
