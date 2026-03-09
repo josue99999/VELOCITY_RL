@@ -11,14 +11,14 @@ def unitree_h1_2_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
   """Create RL runner configuration for Unitree H1 v2 lower limb velocity task."""
   return RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
-      hidden_dims=(256, 128, 64),
+      hidden_dims=(512, 256, 128),
       activation="elu",
       obs_normalization=True,
       stochastic=True,
       init_noise_std=1.0,
     ),
     critic=RslRlModelCfg(
-      hidden_dims=(256, 128, 64),
+      hidden_dims=(512, 256, 128),
       activation="elu",
       obs_normalization=True,
       stochastic=False,

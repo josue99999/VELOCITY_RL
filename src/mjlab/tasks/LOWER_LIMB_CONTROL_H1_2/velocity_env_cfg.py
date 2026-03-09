@@ -381,7 +381,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
   rewards = {
     "track_linear_velocity": RewardTermCfg(
       func=mdp.track_linear_velocity,
-      weight=2.0,
+      weight=4.0,
       params={"command_name": "twist", "std": math.sqrt(0.25)},
     ),
     "track_angular_velocity": RewardTermCfg(
@@ -391,86 +391,91 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "upright": RewardTermCfg(
       func=mdp.flat_orientation,
-      weight=1.0,
+      weight=0.8,
       params={
-        "std": math.sqrt(0.2),
+        "std": math.sqrt(0.3),
         "asset_cfg": SceneEntityCfg("robot", body_names=()),  # Set per-robot.
       },
     ),
     "pose": RewardTermCfg(
       func=mdp.variable_posture,
-      weight=1.0,
+      weight=0.8,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=CONTROLLED_JOINTS),
         "command_name": "twist",
-        "std_standing": {},  # Set per-robot.
+        "std_standing": {},  # Set per-robot (env_cfgs fills these).
         "std_walking": {},  # Set per-robot.
         "std_running": {},  # Set per-robot.
-        "walking_threshold": 0.05,
+        "walking_threshold": 0.1,
         "running_threshold": 1.5,
       },
     ),
     "body_ang_vel": RewardTermCfg(
       func=mdp.body_angular_velocity_penalty,
-      weight=-0.05,
+      weight=-0.03,
       params={"asset_cfg": SceneEntityCfg("robot", body_names=())},  # Set per-robot.
     ),
     "angular_momentum": RewardTermCfg(
       func=mdp.angular_momentum_penalty,
-      weight=-0.001,
+      weight=-0.01,
       params={"sensor_name": "robot/root_angmom"},
     ),
-    "dof_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-1.0),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.01),
+    "dof_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-0.5),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.02),
+    "survival_bonus": RewardTermCfg(
+      func=mdp.survival_bonus,
+      weight=0.03,
+      params={"bonus_per_step": 1.0},
+    ),
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=0.5,
+      weight=0.0,
       params={
         "sensor_name": "feet_ground_contact",
-        "threshold_min": 0.1,
-        "threshold_max": 0.4,
+        "threshold_min": 0.05,
+        "threshold_max": 0.3,
         "command_name": "twist",
         "command_threshold": 0.5,
       },
     ),
     "foot_clearance": RewardTermCfg(
       func=mdp.feet_clearance,
-      weight=-2.0,
+      weight=-0.5,
       params={
-        "target_height": 0.1,
+        "target_height": 0.06,
         "command_name": "twist",
-        "command_threshold": 0.05,
+        "command_threshold": 0.1,
         "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
       },
     ),
     "foot_swing_height": RewardTermCfg(
       func=mdp.feet_swing_height,
-      weight=-0.25,
+      weight=-0.1,
       params={
         "sensor_name": "feet_ground_contact",
-        "target_height": 0.1,
+        "target_height": 0.06,
         "command_name": "twist",
-        "command_threshold": 0.05,
+        "command_threshold": 0.1,
         "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
       },
     ),
     "foot_slip": RewardTermCfg(
       func=mdp.feet_slip,
-      weight=-0.1,
+      weight=-0.05,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
-        "command_threshold": 0.05,
+        "command_threshold": 0.1,
         "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
       },
     ),
     "soft_landing": RewardTermCfg(
       func=mdp.soft_landing,
-      weight=-1e-4,
+      weight=-1e-5,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
-        "command_threshold": 0.05,
+        "command_threshold": 0.1,
       },
     ),
     "stable_upright_under_disturbance": RewardTermCfg(

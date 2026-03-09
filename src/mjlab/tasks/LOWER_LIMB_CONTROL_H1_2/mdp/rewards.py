@@ -308,6 +308,16 @@ def soft_landing(
   return cost
 
 
+def survival_bonus(
+  env: ManagerBasedRlEnv,
+  bonus_per_step: float = 1.0,
+) -> torch.Tensor:
+  """Constant per-step bonus for staying alive (not terminated)."""
+  return (
+    torch.ones(env.num_envs, device=env.device, dtype=torch.float32) * bonus_per_step
+  )
+
+
 class variable_posture:
   """Penalize deviation from default pose with speed-dependent tolerance.
 
