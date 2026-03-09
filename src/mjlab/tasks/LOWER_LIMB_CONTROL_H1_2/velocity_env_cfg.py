@@ -421,15 +421,15 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       params={"sensor_name": "robot/root_angmom"},
     ),
     "dof_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-0.5),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.02),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.05),
     "survival_bonus": RewardTermCfg(
       func=mdp.survival_bonus,
-      weight=0.03,
+      weight=0.15,
       params={"bonus_per_step": 1.0},
     ),
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=0.0,
+      weight=0.3,
       params={
         "sensor_name": "feet_ground_contact",
         "threshold_min": 0.05,
@@ -493,7 +493,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     "time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
     "fell_over": TerminationTermCfg(
       func=mdp.bad_orientation,
-      params={"limit_angle": math.radians(70.0)},
+      params={"limit_angle": math.radians(55.0)},
     ),
   }
 
