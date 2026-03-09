@@ -122,14 +122,18 @@ def angular_momentum_penalty(
   """
   angmom_sensor: BuiltinSensor = env.scene[sensor_name]
   angmom = angmom_sensor.data
+  if torch.isnan(angmom).any() or torch.isinf(angmom).any():
+    return torch.zeros(env.num_envs, device=env.device, dtype=torch.float32)
   angmom_magnitude_sq = torch.sum(torch.square(angmom), dim=-1)
+  angmom_magnitude_sq = torch.clamp(angmom_magnitude_sq, min=0.0)
   angmom_magnitude = torch.sqrt(angmom_magnitude_sq)
   _mean = torch.nanmean(angmom_magnitude).nan_to_num(nan=0.0)
   env.extras["log"]["Metrics/angular_momentum_mean"] = float(
     torch.clamp(_mean, max=500.0).item()
   )
   angmom_magnitude = torch.clamp(angmom_magnitude, max=max_magnitude)
-  return angmom_magnitude * angmom_magnitude
+  result = angmom_magnitude * angmom_magnitude
+  return torch.nan_to_num(result, nan=0.0, posinf=max_magnitude**2, neginf=0.0)
 
 
 def feet_air_time(

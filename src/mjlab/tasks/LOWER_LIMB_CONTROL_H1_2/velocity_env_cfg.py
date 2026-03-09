@@ -417,11 +417,11 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "angular_momentum": RewardTermCfg(
       func=mdp.angular_momentum_penalty,
-      weight=-0.01,
+      weight=-0.001,
       params={"sensor_name": "robot/root_angmom"},
     ),
     "dof_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-1.0),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.01),
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
       weight=0.5,

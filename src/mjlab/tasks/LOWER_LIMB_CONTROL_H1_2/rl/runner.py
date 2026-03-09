@@ -24,7 +24,17 @@ class VelocityOnPolicyRunner(MjlabOnPolicyRunner):
       if getattr(self.logger, "rewbuffer", None) and len(self.logger.rewbuffer) > 0
       else None
     )
+    if mean_reward is not None and (
+      mean_reward != mean_reward or mean_reward == float("inf")
+    ):
+      mean_reward = None
     value_loss = loss_dict.get("value")
+    if value_loss is not None:
+      if isinstance(value_loss, torch.Tensor):
+        if torch.isnan(value_loss).any() or torch.isinf(value_loss).any():
+          value_loss = float("inf")
+      elif value_loss != value_loss or value_loss == float("inf"):
+        value_loss = float("inf")
     # fell_over_rate: env can log it in extras["log"]; otherwise leave None
     fell_over_rate = None
     if getattr(self.logger, "ep_extras", None) and len(self.logger.ep_extras) > 0:
