@@ -79,12 +79,11 @@ ARM_AND_HAND_BODIES = (
 )
 
 # Phases use episodes = common_step_counter / max_episode_length.
-# Robust 6-phase curriculum: checkpoint ~756 ep starts in phase 4 (light_disturbances).
-# Fases 1–3 tienen rangos ya pasados para forzar inicio en fase 4 al reanudar.
+# 6-phase curriculum: 250 episodes per phase (~10k iterations each at ~200 iter per 5 ep).
 # arm_randomization required by randomize_arm_pose / randomize_arm_mass events.
 CURRICULUM_PHASES = {
   "pure_walking": {
-    "episode_range": (0, 1),
+    "episode_range": (0, 250),
     "arm_randomization": False,
     "arm_pose_range": 0.0,
     "arm_mass_range": (1.0, 1.0),
@@ -95,7 +94,7 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.1, 0.1),
   },
   "arm_randomization": {
-    "episode_range": (1, 2),
+    "episode_range": (250, 500),
     "arm_randomization": True,
     "arm_pose_range": 0.25,
     "arm_mass_range": (0.9, 1.1),
@@ -106,7 +105,7 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.1, 0.1),
   },
   "arm_pose_exploration": {
-    "episode_range": (2, 750),
+    "episode_range": (500, 750),
     "arm_randomization": True,
     "arm_pose_range": 0.5,
     "arm_mass_range": (0.8, 1.2),
@@ -117,7 +116,7 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.05, 0.05),
   },
   "light_disturbances": {
-    "episode_range": (750, 2000),
+    "episode_range": (750, 1000),
     "arm_randomization": True,
     "arm_pose_range": 0.5,
     "arm_mass_range": (0.8, 1.2),
@@ -128,7 +127,7 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.03, 0.03),
   },
   "moderate_disturbances": {
-    "episode_range": (2000, 3200),
+    "episode_range": (1000, 1250),
     "arm_randomization": True,
     "arm_pose_range": 0.75,
     "arm_mass_range": (0.7, 1.3),
@@ -139,7 +138,7 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.02, 0.02),
   },
   "full_robustness": {
-    "episode_range": (3200, float("inf")),
+    "episode_range": (1250, float("inf")),
     "arm_randomization": True,
     "arm_pose_range": 1.0,
     "arm_mass_range": (0.6, 1.5),

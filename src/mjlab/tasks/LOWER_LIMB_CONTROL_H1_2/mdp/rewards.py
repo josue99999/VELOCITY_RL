@@ -75,7 +75,11 @@ def flat_orientation(
   # If body_ids are specified, compute projected gravity for that body.
   if asset_cfg.body_ids:
     body_quat_w = asset.data.body_link_quat_w[:, asset_cfg.body_ids, :]  # [B, N, 4]
-    body_quat_w = body_quat_w.squeeze(1)  # [B, 4]
+    # Use only root (first) body when multiple bodies selected (e.g. body_ids=slice(None)).
+    if body_quat_w.dim() == 3 and body_quat_w.shape[1] > 1:
+      body_quat_w = body_quat_w[:, 0, :]  # [B, 4]
+    else:
+      body_quat_w = body_quat_w.squeeze(1)  # [B, 4]
     gravity_w = asset.data.gravity_vec_w  # [3]
     projected_gravity_b = quat_apply_inverse(body_quat_w, gravity_w)  # [B, 3]
     xy_squared = torch.sum(torch.square(projected_gravity_b[:, :2]), dim=1)

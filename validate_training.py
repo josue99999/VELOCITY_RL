@@ -111,9 +111,9 @@ def test_curriculum():
     cfg.scene.num_envs = 4
     env = ManagerBasedRlEnv(cfg=cfg, device="cpu")
 
-    # Test fase con perturbaciones (light_disturbances: episode_range (750, 2000))
-    # After gatekeeping, offset can be 10 → need effective_episodes >= 750, so steps >= (750+10)*1000
-    env.common_step_counter = 760_000
+    # Test fase con perturbaciones (light_disturbances: episode_range (15, 20))
+    # After gatekeeping, offset can be 10 → need effective_episodes >= 15, so steps >= (15+10)*1000
+    env.common_step_counter = 26_000
 
     # Test gatekeeping con métricas malas
     env._curriculum_metrics = {
