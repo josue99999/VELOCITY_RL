@@ -89,7 +89,9 @@ class VelocityOnPolicyRunner(MjlabOnPolicyRunner):
           )
           self.alg.process_env_step(obs, rewards, dones, extras)
           intrinsic_rewards = (
-            self.alg.intrinsic_rewards if self.cfg["algorithm"]["rnd_cfg"] else None
+            self.alg.intrinsic_rewards
+            if self.cfg["algorithm"].get("rnd_cfg") and self.alg.rnd
+            else None
           )
           self.logger.process_env_step(rewards, dones, extras, intrinsic_rewards)
 
@@ -100,6 +102,21 @@ class VelocityOnPolicyRunner(MjlabOnPolicyRunner):
         self.alg.compute_returns(obs)
 
       loss_dict = self.alg.update()
+      has_nan = False
+      for key, value in loss_dict.items():
+        if isinstance(value, torch.Tensor):
+          if torch.isnan(value).any() or torch.isinf(value).any():
+            print(f"[WARNING] NaN/Inf in {key}: {value}")
+            has_nan = True
+        elif isinstance(value, (int, float)):
+          if value != value or value == float("inf") or value == float("-inf"):
+            print(f"[WARNING] NaN/Inf in {key}: {value}")
+            has_nan = True
+      if has_nan:
+        raise RuntimeError(
+          f"[CRITICAL] NaN/Inf detected at iteration {it}. "
+          "Training stopped to prevent corruption. Restart from last checkpoint."
+        )
       self._set_curriculum_metrics_after_update(loss_dict)
 
       stop = time.time()
@@ -115,7 +132,11 @@ class VelocityOnPolicyRunner(MjlabOnPolicyRunner):
         loss_dict=loss_dict,
         learning_rate=self.alg.learning_rate,
         action_std=self.alg.get_policy().output_std,
-        rnd_weight=(self.alg.rnd.weight if self.cfg["algorithm"]["rnd_cfg"] else None),
+        rnd_weight=(
+          self.alg.rnd.weight
+          if self.cfg["algorithm"].get("rnd_cfg") and self.alg.rnd
+          else None
+        ),
       )
 
       if self.logger.writer is not None and it % self.cfg["save_interval"] == 0:
