@@ -124,9 +124,10 @@ def angular_momentum_penalty(
   angmom = angmom_sensor.data
   if torch.isnan(angmom).any() or torch.isinf(angmom).any():
     return torch.zeros(env.num_envs, device=env.device, dtype=torch.float32)
+  angmom = torch.clamp(angmom, min=-1000.0, max=1000.0)
   angmom_magnitude_sq = torch.sum(torch.square(angmom), dim=-1)
-  angmom_magnitude_sq = torch.clamp(angmom_magnitude_sq, min=0.0)
-  angmom_magnitude = torch.sqrt(angmom_magnitude_sq)
+  angmom_magnitude_sq = torch.clamp(angmom_magnitude_sq, min=0.0, max=max_magnitude**2)
+  angmom_magnitude = torch.sqrt(angmom_magnitude_sq + 1e-8)
   _mean = torch.nanmean(angmom_magnitude).nan_to_num(nan=0.0)
   env.extras["log"]["Metrics/angular_momentum_mean"] = float(
     torch.clamp(_mean, max=500.0).item()
@@ -287,6 +288,7 @@ def soft_landing(
   assert sensor_data.force is not None
   forces = sensor_data.force  # [B, N, 3]
   force_magnitude = torch.norm(forces, dim=-1)  # [B, N]
+  force_magnitude = torch.clamp(force_magnitude, max=10000.0)
   first_contact = contact_sensor.compute_first_contact(dt=env.step_dt)  # [B, N]
   landing_impact = force_magnitude * first_contact.float()  # [B, N]
   cost = torch.sum(landing_impact, dim=1)  # [B]
@@ -387,7 +389,7 @@ class variable_posture:
     desired_joint_pos = self.default_joint_pos[:, asset_cfg.joint_ids]
     error_squared = torch.square(current_joint_pos - desired_joint_pos)
 
-    return torch.exp(-torch.mean(error_squared / (std**2), dim=1))
+    return torch.exp(-torch.mean(error_squared / (std**2 + 1e-8), dim=1))
 
 
 def stable_upright_under_disturbance(
