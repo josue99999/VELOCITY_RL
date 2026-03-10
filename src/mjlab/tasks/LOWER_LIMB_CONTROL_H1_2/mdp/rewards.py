@@ -20,6 +20,19 @@ if TYPE_CHECKING:
 _DEFAULT_ASSET_CFG = SceneEntityCfg("robot")
 
 
+def joint_torques_l2(
+  env: ManagerBasedRlEnv,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Penalize squared L2 norm of joint torques for energy efficiency.
+
+  Uses actuator forces restricted to the actuators specified by ``asset_cfg``.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  torques = asset.data.actuator_force[:, asset_cfg.actuator_ids]
+  return torch.sum(torch.square(torques), dim=1)
+
+
 def track_linear_velocity(
   env: ManagerBasedRlEnv,
   std: float,
@@ -194,6 +207,60 @@ def feet_clearance(
   return cost
 
 
+def feet_clearance_improved(
+  env: ManagerBasedRlEnv,
+  target_height: float = 0.08,
+  min_height: float = 0.03,
+  command_name: str | None = None,
+  command_threshold: float = 0.1,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  sensor_name: str = "feet_ground_contact",
+) -> torch.Tensor:
+  """Improved foot clearance reward focusing on swing phase and dragging.
+
+  - Penalizes feet that drag (too low) during swing.
+  - Penalizes deviation from a target swing height, weighted by swing velocity.
+  - Only active when the robot is commanded to move.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  sensor: ContactSensor = env.scene[sensor_name]
+
+  foot_z = asset.data.site_pos_w[:, asset_cfg.site_ids, 2]  # [B, N]
+  foot_vel_xy = asset.data.site_lin_vel_w[:, asset_cfg.site_ids, :2]  # [B, N, 2]
+  vel_norm = torch.norm(foot_vel_xy, dim=-1)  # [B, N]
+
+  assert sensor.data.found is not None
+  in_contact = sensor.data.found > 0  # [B, N]
+  is_swing = (~in_contact) & (vel_norm > 0.1)  # moving and not in contact
+
+  # Deviation from target height during swing.
+  delta = torch.abs(foot_z - target_height)
+  clearance_penalty = torch.where(
+    is_swing,
+    delta * vel_norm,
+    torch.zeros_like(delta),
+  )
+
+  # Strong extra penalty for dragging (too low during swing).
+  too_low = (foot_z < min_height) & is_swing
+  dragging_penalty = torch.where(
+    too_low,
+    (min_height - foot_z) * 10.0,
+    torch.zeros_like(foot_z),
+  )
+
+  total = torch.sum(clearance_penalty + dragging_penalty, dim=1)
+
+  if command_name is not None:
+    command = env.command_manager.get_command(command_name)
+    if command is not None:
+      linear_norm = torch.norm(command[:, :2], dim=1)
+      active = (linear_norm > command_threshold).float()
+      total = total * active
+
+  return total
+
+
 class feet_swing_height:
   """Penalize deviation from target swing height, evaluated at landing."""
 
@@ -245,6 +312,15 @@ class feet_swing_height:
     )
     return cost
 
+  def reset(self, env_ids: torch.Tensor) -> None:
+    """Clear peak heights for environments that are resetting.
+
+    Without this, a foot still in the air at episode termination carries its
+    peak height into the next episode, producing a spurious landing penalty
+    on the very first touchdown of the new episode.
+    """
+    self.peak_heights[env_ids] = 0.0
+
 
 def feet_slip(
   env: ManagerBasedRlEnv,
@@ -274,6 +350,65 @@ def feet_slip(
   )
   env.extras["log"]["Metrics/slip_velocity_mean"] = mean_slip_vel.nan_to_num(nan=0.0)
   return cost
+
+
+class single_foot_contact:
+  """Reward alternating single-foot contacts to discourage hopping.
+
+  Uses a short temporal buffer (grace period) to allow natural double-support
+  while still encouraging gaits donde cada pie contacta el suelo de forma alternada.
+  """
+
+  def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+    self.sensor_name: str = cfg.params["sensor_name"]
+    self.command_name: str = cfg.params["command_name"]
+    self.command_threshold: float = cfg.params.get("command_threshold", 0.1)
+    grace_period: float = cfg.params.get("grace_period", 0.2)
+    buffer_len = max(1, int(grace_period / env.step_dt))
+    self.buffer = torch.zeros(
+      (env.num_envs, buffer_len), device=env.device, dtype=torch.float32
+    )
+
+  def __call__(
+    self,
+    env: ManagerBasedRlEnv,
+    sensor_name: str,
+    command_name: str,
+    command_threshold: float,
+    grace_period: float,
+  ) -> torch.Tensor:
+    del grace_period  # Fixed by constructor.
+
+    sensor: ContactSensor = env.scene[sensor_name]
+    command = env.command_manager.get_command(command_name)
+    assert command is not None
+
+    # Only active when moving forward/lateral con velocidad apreciable.
+    linear_norm = torch.norm(command[:, :2], dim=1)
+    active = (linear_norm > command_threshold).float()
+
+    assert sensor.data.found is not None
+    contact = sensor.data.found  # [B, num_feet]
+    num_feet_in_contact = torch.sum(contact > 0, dim=1).float()
+
+    # Single contact = exactamente un pie en contacto.
+    single_contact = (num_feet_in_contact == 1).float()
+
+    # Actualizar buffer temporal (FIFO) para el periodo de gracia.
+    self.buffer = torch.roll(self.buffer, shifts=-1, dims=1)
+    self.buffer[:, -1] = single_contact
+
+    # Recompensa si ha habido al menos un paso de single-contact en la ventana.
+    had_single_contact = (torch.max(self.buffer, dim=1).values > 0).float()
+    return had_single_contact * active
+
+  def reset(self, env_ids: torch.Tensor) -> None:
+    """Clear contact history buffer for environments that are resetting.
+
+    Without this, the rolling buffer carries stale single-contact history from
+    the previous episode into the first steps of the new episode.
+    """
+    self.buffer[env_ids] = 0.0
 
 
 def soft_landing(
@@ -418,3 +553,92 @@ def stable_upright_under_disturbance(
 
   upright = flat_orientation(env, std=upright_std, asset_cfg=asset_cfg)
   return (upright > upright_threshold).float()
+
+
+def zmp_stability_reward(
+  env: ManagerBasedRlEnv,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+  support_polygon_margin: float = 0.05,
+) -> torch.Tensor:
+  """Heuristic COM-based stability reward (ZMP-inspired).
+
+  Rewards keeping the COM projected close to the pelvis in the horizontal plane.
+  Computed as offset from the pelvis (not from world origin) so the reward is
+  invariant to world-frame spawn position and correct in multi-env training.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  com_pos = asset.data.root_com_pos_w  # (num_envs, 3)
+  base_pos = asset.data.root_link_pos_w  # (num_envs, 3) - pelvis in world frame
+
+  # Horizontal COM displacement relative to pelvis projection.
+  com_offset_xy = com_pos[:, :2] - base_pos[:, :2]
+  com_dist = torch.norm(com_offset_xy, dim=1)
+
+  length_scale = max(1e-3, 2.0 * support_polygon_margin)
+  return torch.exp(-com_dist / length_scale)
+
+
+def base_height_penalty(
+  env: ManagerBasedRlEnv,
+  target_height: float,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Penalize deviation of COM height from a target value above the terrain.
+
+  Uses terrain-relative height (com_z - terrain_z) so the penalty is invariant
+  to terrain elevation. This is critical on rough terrain where each environment
+  spawns at a different world-frame height.
+
+  Returns a positive cost (squared error) combined with a negative weight
+  (e.g. -100.0) to strongly enforce vertical stability.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  com_pos = asset.data.root_com_pos_w  # (num_envs, 3)
+  terrain_z = env.scene.env_origins[:, 2]  # (num_envs,) - terrain height at spawn
+  height_above_terrain = com_pos[:, 2] - terrain_z
+  height_error = height_above_terrain - target_height
+  return torch.square(height_error)
+
+
+def contact_force_penalty(
+  env: ManagerBasedRlEnv,
+  sensor_name: str,
+  force_threshold: float = 800.0,
+) -> torch.Tensor:
+  """Penalize contact forces above a threshold for softer contacts."""
+  contact_sensor: ContactSensor = env.scene[sensor_name]
+  sensor_data = contact_sensor.data
+  assert sensor_data.force is not None
+  forces = sensor_data.force  # [B, N, 3]
+  force_magnitude = torch.norm(forces, dim=-1)  # [B, N]
+  excess = torch.clamp(force_magnitude - force_threshold, min=0.0)
+  return torch.sum(excess, dim=1)
+
+
+def stance_contact_reward(
+  env: ManagerBasedRlEnv,
+  sensor_name: str,
+  command_name: str | None = None,
+  command_threshold: float = 0.1,
+) -> torch.Tensor:
+  """Reward appropriate stance contact: feet in contact when commanded to move.
+
+  Uses the number of feet in contact as a proxy for stance time. Combined with
+  air-time and swing rewards, this encourages healthy duty cycles.
+  """
+  contact_sensor: ContactSensor = env.scene[sensor_name]
+  assert contact_sensor.data.found is not None
+  in_contact = (contact_sensor.data.found > 0).float()  # [B, N]
+  num_in_contact = torch.sum(in_contact, dim=1)  # [B]
+
+  # Simple shaping: prefer having at least one foot in contact, saturate at 2.
+  stance_score = torch.clamp(num_in_contact, min=0.0, max=2.0)
+
+  if command_name is not None:
+    command = env.command_manager.get_command(command_name)
+    if command is not None:
+      linear_norm = torch.norm(command[:, :2], dim=1)
+      active = (linear_norm > command_threshold).float()
+      stance_score = stance_score * active
+
+  return stance_score

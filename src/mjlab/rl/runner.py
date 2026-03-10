@@ -1,7 +1,5 @@
-import json
 import os
 import types
-from pathlib import Path
 
 import torch
 from rsl_rl.env import VecEnv
@@ -16,54 +14,10 @@ ACTOR_NAN_REPLACEMENT_STD = 0.1
 # Clamp log_std so exp(log_std) does not underflow/overflow or become NaN.
 ACTOR_LOG_STD_MIN = -20.0
 ACTOR_LOG_STD_MAX = 2.0
-# Debug log path (session 6bf6c6).
-_DEBUG_LOG_PATH = str(
-  Path(__file__).resolve().parents[3] / ".cursor" / "debug-6bf6c6.log"
-)
-
-
-def _debug_log(data: dict) -> None:
-  import sys
-  import time
-
-  payload = {**data, "timestamp": data.get("timestamp", time.time())}
-  line = json.dumps(payload) + "\n"
-  try:
-    dirpath = os.path.dirname(_DEBUG_LOG_PATH)
-    if dirpath:
-      os.makedirs(dirpath, exist_ok=True)
-    with open(_DEBUG_LOG_PATH, "a") as f:
-      f.write(line)
-  except Exception:
-    pass
-  # Always echo to stderr so we get evidence even if file path is wrong.
-  if payload.get("message") in (
-    "Patch actor min std",
-    "Patched _update_distribution invoked",
-    "Std problematic before clamp",
-  ):
-    print(
-      f"[DEBUG] {payload.get('message')} | {payload.get('data', {})}",
-      file=sys.stderr,
-      flush=True,
-    )
 
 
 def _actor_update_distribution_min_std(self, obs: torch.Tensor) -> None:
   """Drop-in for MLPModel._update_distribution that clamps std to avoid PPO crash."""
-  # #region agent log
-  if not getattr(self, "_debug_patch_invoked", False):
-    self._debug_patch_invoked = True
-    _debug_log(
-      {
-        "sessionId": "6bf6c6",
-        "hypothesisId": "H1",
-        "location": "runner.py:_actor_update_distribution_min_std",
-        "message": "Patched _update_distribution invoked",
-        "data": {"first_call": True},
-      }
-    )
-  # #endregion
   if self.state_dependent_std:
     mean_and_std = self.mlp(obs)
     if self.noise_std_type == "scalar":
@@ -95,25 +49,6 @@ def _actor_update_distribution_min_std(self, obs: torch.Tensor) -> None:
         f"Unknown standard deviation type: {self.noise_std_type}. "
         "Should be 'scalar' or 'log'"
       )
-  # #region agent log
-  min_std_before = std.min().item()
-  any_neg = (std <= 0).any().item()
-  any_nan = torch.isnan(std).any().item()
-  if any_neg or any_nan:
-    _debug_log(
-      {
-        "sessionId": "6bf6c6",
-        "hypothesisId": "H1",
-        "location": "runner.py:std_before_clamp",
-        "message": "Std problematic before clamp",
-        "data": {
-          "min_std_before": min_std_before,
-          "any_neg": any_neg,
-          "any_nan": any_nan,
-        },
-      }
-    )
-  # #endregion
   std = std.clamp(min=ACTOR_MIN_STD)
   # NaN/Inf break Normal(); clamp does not replace them. Use ACTOR_NAN_REPLACEMENT_STD so
   # the policy keeps exploration instead of collapsing to near-deterministic (std=1e-6).
@@ -123,18 +58,6 @@ def _actor_update_distribution_min_std(self, obs: torch.Tensor) -> None:
     posinf=1.0,
     neginf=ACTOR_MIN_STD,
   )
-  # #region agent log
-  if any_neg or any_nan:
-    _debug_log(
-      {
-        "sessionId": "6bf6c6",
-        "hypothesisId": "H1",
-        "location": "runner.py:std_after_clamp",
-        "message": "Std after clamp",
-        "data": {"min_std_after": std.min().item()},
-      }
-    )
-  # #endregion
   # Sanitize mean so Normal(mean, std) never receives NaN (e.g. after a corrupt update).
   mean = torch.nan_to_num(mean, nan=0.0, posinf=0.0, neginf=0.0)
   self.distribution = Normal(mean, std)
@@ -181,36 +104,11 @@ class MjlabOnPolicyRunner(OnPolicyRunner):
 
   def _patch_actor_min_std(self) -> None:
     """Patch actor so policy std is clamped to ACTOR_MIN_STD, avoiding PPO crash."""
-    # #region agent log
-    has_alg = hasattr(self, "alg")
-    has_actor = hasattr(self.alg, "actor") if has_alg else False
-    actor = getattr(self.alg, "actor", None) if has_alg else None
-    has_update_dist = (
-      hasattr(actor, "_update_distribution") if actor is not None else False
-    )
-    # #endregion
-    if has_alg and has_actor:
-      actor = self.alg.actor
-      if hasattr(actor, "_update_distribution"):
-        actor._update_distribution = types.MethodType(
-          _actor_update_distribution_min_std, actor
-        )
-    # #region agent log
-    _debug_log(
-      {
-        "sessionId": "6bf6c6",
-        "hypothesisId": "H2",
-        "location": "runner.py:_patch_actor_min_std",
-        "message": "Patch actor min std",
-        "data": {
-          "has_alg": has_alg,
-          "has_actor": has_actor,
-          "has_update_distribution": has_update_dist,
-          "patch_applied": has_alg and has_actor and has_update_dist,
-        },
-      }
-    )
-    # #endregion
+    actor = getattr(self.alg, "actor", None)
+    if actor is not None and hasattr(actor, "_update_distribution"):
+      actor._update_distribution = types.MethodType(
+        _actor_update_distribution_min_std, actor
+      )
 
   def export_policy_to_onnx(
     self, path: str, filename: str = "policy.onnx", verbose: bool = False

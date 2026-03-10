@@ -1,6 +1,7 @@
 import torch
 
 from mjlab.envs import ManagerBasedRlEnv
+from mjlab.envs.mdp.events import randomize_field
 from mjlab.managers.event_manager import requires_model_fields
 from mjlab.managers.scene_entity_config import SceneEntityCfg
 
@@ -159,3 +160,50 @@ def randomize_arm_mass_phase_based(
   )
   new_mass = nominal_mass.unsqueeze(0) * multipliers
   env.sim.model.body_mass[env_ids.unsqueeze(-1), global_body_ids] = new_mass
+
+
+@requires_model_fields("body_mass")
+def randomize_link_masses(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor | None,
+  mass_range: tuple[float, float],
+  asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> None:
+  """Domain randomization of link masses via unified randomize_field helper.
+
+  Applies a multiplicative factor sampled uniformly from ``mass_range`` to the
+  nominal body masses for the specified asset/bodies. Safe to call on every reset
+  thanks to use of stored default fields inside ``randomize_field``.
+  """
+  randomize_field(
+    env,
+    env_ids,
+    field="body_mass",
+    ranges=mass_range,
+    distribution="uniform",
+    operation="scale",
+    asset_cfg=asset_cfg,
+  )
+
+
+@requires_model_fields("body_inertia")
+def randomize_link_inertia(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor | None,
+  inertia_range: tuple[float, float],
+  asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> None:
+  """Domain randomization of link inertias via unified randomize_field helper.
+
+  Applies a multiplicative factor sampled uniformly from ``inertia_range`` to the
+  nominal body inertia tensors for the specified asset/bodies.
+  """
+  randomize_field(
+    env,
+    env_ids,
+    field="body_inertia",
+    ranges=inertia_range,
+    distribution="uniform",
+    operation="scale",
+    asset_cfg=asset_cfg,
+  )

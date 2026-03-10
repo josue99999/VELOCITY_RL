@@ -113,6 +113,35 @@ class VelocityOnPolicyRunner(MjlabOnPolicyRunner):
             print(f"[WARNING] NaN/Inf in {key}: {value}")
             has_nan = True
       if has_nan:
+        mean_reward = (
+          statistics.mean(self.logger.rewbuffer)
+          if getattr(self.logger, "rewbuffer", None) and len(self.logger.rewbuffer) > 0
+          else None
+        )
+        if mean_reward is not None and (
+          mean_reward != mean_reward or mean_reward == float("inf")
+        ):
+          mean_reward = None
+        value_loss = loss_dict.get("value")
+        if isinstance(value_loss, torch.Tensor):
+          if torch.isnan(value_loss).any() or torch.isinf(value_loss).any():
+            value_loss = float("inf")
+          else:
+            value_loss = float(value_loss.item())
+        elif isinstance(value_loss, (int, float)):
+          if value_loss != value_loss or value_loss == float("inf"):
+            value_loss = float("inf")
+        else:
+          value_loss = None
+        print(f"[CRITICAL] NaN/Inf detected at iteration {it}")
+        print(f"  Mean reward: {mean_reward}")
+        print(f"  Value loss: {value_loss}")
+        try:
+          emergency_path = os.path.join(self.logger.log_dir, f"emergency_nan_{it}.pt")
+          self.save(emergency_path)
+          print(f"  Emergency checkpoint saved to: {emergency_path}")
+        except Exception as e:  # noqa: BLE001
+          print(f"[WARNING] Failed to save emergency checkpoint: {e}")
         raise RuntimeError(
           f"[CRITICAL] NaN/Inf detected at iteration {it}. "
           "Training stopped to prevent corruption. Restart from last checkpoint."

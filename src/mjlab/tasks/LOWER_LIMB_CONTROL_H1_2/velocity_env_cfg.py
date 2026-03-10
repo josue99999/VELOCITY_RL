@@ -23,6 +23,7 @@ from mjlab.sensor import GridPatternCfg, ObjRef, RayCastSensorCfg
 from mjlab.sim import MujocoCfg, SimulationCfg
 from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2 import mdp
 from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.mdp import UniformVelocityCommandCfg
+from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.mdp.actions import NoisyJointPositionActionCfg
 from mjlab.terrains import TerrainImporterCfg
 from mjlab.terrains.config import ROUGH_TERRAINS_CFG
 from mjlab.utils.noise import UniformNoiseCfg as Unoise
@@ -83,7 +84,7 @@ ARM_AND_HAND_BODIES = (
 # arm_randomization required by randomize_arm_pose / randomize_arm_mass events.
 CURRICULUM_PHASES = {
   "pure_walking": {
-    "episode_range": (0, 250),
+    "episode_range": (0, 5),
     "arm_randomization": False,
     "arm_pose_range": 0.0,
     "arm_mass_range": (1.0, 1.0),
@@ -94,7 +95,7 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.1, 0.1),
   },
   "arm_randomization": {
-    "episode_range": (250, 500),
+    "episode_range": (5, 10),
     "arm_randomization": True,
     "arm_pose_range": 0.25,
     "arm_mass_range": (0.9, 1.1),
@@ -105,7 +106,7 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.1, 0.1),
   },
   "arm_pose_exploration": {
-    "episode_range": (500, 750),
+    "episode_range": (10, 15),
     "arm_randomization": True,
     "arm_pose_range": 0.5,
     "arm_mass_range": (0.8, 1.2),
@@ -116,7 +117,7 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.05, 0.05),
   },
   "light_disturbances": {
-    "episode_range": (750, 1000),
+    "episode_range": (15, 20),
     "arm_randomization": True,
     "arm_pose_range": 0.5,
     "arm_mass_range": (0.8, 1.2),
@@ -127,7 +128,7 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.03, 0.03),
   },
   "moderate_disturbances": {
-    "episode_range": (1000, 1250),
+    "episode_range": (20, 25),
     "arm_randomization": True,
     "arm_pose_range": 0.75,
     "arm_mass_range": (0.7, 1.3),
@@ -138,7 +139,7 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.02, 0.02),
   },
   "full_robustness": {
-    "episode_range": (1250, float("inf")),
+    "episode_range": (25, float("inf")),
     "arm_randomization": True,
     "arm_pose_range": 1.0,
     "arm_mass_range": (0.6, 1.5),
@@ -163,30 +164,39 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       func=mdp.builtin_sensor,
       params={"sensor_name": "robot/imu_lin_vel"},
       noise=Unoise(n_min=-0.5, n_max=0.5),
+      history_length=6,
     ),
     "base_ang_vel": ObservationTermCfg(
       func=mdp.builtin_sensor,
       params={"sensor_name": "robot/imu_ang_vel"},
       noise=Unoise(n_min=-0.2, n_max=0.2),
+      history_length=6,
     ),
     "projected_gravity": ObservationTermCfg(
       func=mdp.projected_gravity,
       noise=Unoise(n_min=-0.05, n_max=0.05),
+      history_length=6,
     ),
     "joint_pos": ObservationTermCfg(
       func=mdp.joint_pos_rel,
       params={"asset_cfg": SceneEntityCfg("robot", joint_names=OBSERVED_JOINTS)},
       noise=Unoise(n_min=-0.01, n_max=0.01),
+      history_length=6,
     ),
     "joint_vel": ObservationTermCfg(
       func=mdp.joint_vel_rel,
       params={"asset_cfg": SceneEntityCfg("robot", joint_names=OBSERVED_JOINTS)},
       noise=Unoise(n_min=-1.5, n_max=1.5),
+      history_length=6,
     ),
     "actions": ObservationTermCfg(func=mdp.last_action),
     "command": ObservationTermCfg(
       func=mdp.generated_commands,
       params={"command_name": "twist"},
+    ),
+    "gait_phase_clock": ObservationTermCfg(
+      func=mdp.gait_phase_clock,
+      params={"cycle_freq_hz": 1.5},
     ),
     "height_scan": ObservationTermCfg(
       func=envs_mdp.height_scan,
@@ -226,11 +236,13 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       terms=actor_terms,
       concatenate_terms=True,
       enable_corruption=True,
+      nan_policy="sanitize",
     ),
     "critic": ObservationGroupCfg(
       terms=critic_terms,
       concatenate_terms=True,
       enable_corruption=False,
+      nan_policy="sanitize",
     ),
   }
 
@@ -238,11 +250,12 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
   # Actions
   ##
 
+  joint_actuator_names = [pattern for pattern in CONTROLLED_JOINTS]
   actions: dict[str, ActionTermCfg] = {
-    "joint_pos": JointPositionActionCfg(
+    "joint_pos": NoisyJointPositionActionCfg(
       entity_name="robot",
-      actuator_names=CONTROLLED_JOINTS,
-      scale=0.5,  # Override per-robot.
+      actuator_names=joint_actuator_names,
+      scale=0.25,  # Override per-robot.
       use_default_offset=True,
     )
   }
@@ -260,6 +273,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       heading_command=True,
       heading_control_stiffness=0.5,
       debug_vis=True,
+      init_velocity_prob=0.2,
       ranges=UniformVelocityCommandCfg.Ranges(
         lin_vel_x=(-1.0, 1.0),
         lin_vel_y=(-1.0, 1.0),
@@ -346,6 +360,32 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         },
       },
     ),
+    "randomize_link_masses": EventTermCfg(
+      mode="reset",
+      func=mdp.randomize_link_masses,
+      params={
+        "asset_cfg": SceneEntityCfg("robot"),
+        "mass_range": (0.8, 1.2),
+      },
+    ),
+    "randomize_link_inertia": EventTermCfg(
+      mode="reset",
+      func=mdp.randomize_link_inertia,
+      params={
+        "asset_cfg": SceneEntityCfg("robot"),
+        "inertia_range": (0.8, 1.2),
+      },
+    ),
+    "randomize_pd_gains": EventTermCfg(
+      mode="reset",
+      func=mdp.randomize_pd_gains,
+      params={
+        "kp_range": (0.8, 1.2),
+        "kd_range": (0.8, 1.2),
+        # Apply PD gain randomization to all actuators of the robot.
+        "asset_cfg": SceneEntityCfg("robot"),
+      },
+    ),
     "randomize_arm_pose": EventTermCfg(
       func=mdp.events.randomize_arm_pose_phase_based,
       mode="reset",
@@ -381,17 +421,17 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
   rewards = {
     "track_linear_velocity": RewardTermCfg(
       func=mdp.track_linear_velocity,
-      weight=4.0,
+      weight=1.0,
       params={"command_name": "twist", "std": math.sqrt(0.25)},
     ),
     "track_angular_velocity": RewardTermCfg(
       func=mdp.track_angular_velocity,
-      weight=2.0,
+      weight=0.5,
       params={"command_name": "twist", "std": math.sqrt(0.5)},
     ),
     "upright": RewardTermCfg(
       func=mdp.flat_orientation,
-      weight=0.8,
+      weight=2.0,
       params={
         "std": math.sqrt(0.3),
         "asset_cfg": SceneEntityCfg("robot", body_names=()),  # Set per-robot.
@@ -412,24 +452,46 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "body_ang_vel": RewardTermCfg(
       func=mdp.body_angular_velocity_penalty,
-      weight=-0.03,
+      weight=-0.05,
       params={"asset_cfg": SceneEntityCfg("robot", body_names=())},  # Set per-robot.
     ),
     "angular_momentum": RewardTermCfg(
       func=mdp.angular_momentum_penalty,
-      weight=-0.01,
+      weight=-0.005,
       params={"sensor_name": "robot/root_angmom"},
     ),
     "dof_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-0.5),
     "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.05),
+    "joint_torques": RewardTermCfg(
+      func=mdp.joint_torques_l2,
+      weight=-0.0001,
+      params={
+        "asset_cfg": SceneEntityCfg("robot", actuator_names=list(CONTROLLED_JOINTS))
+      },
+    ),
+    "joint_acceleration": RewardTermCfg(
+      func=mdp.joint_acc_l2,
+      weight=-0.00001,
+      params={"asset_cfg": SceneEntityCfg("robot", joint_names=CONTROLLED_JOINTS)},
+    ),
+    "zmp_stability": RewardTermCfg(
+      func=mdp.zmp_stability_reward,
+      weight=0.3,
+      params={"asset_cfg": SceneEntityCfg("robot"), "support_polygon_margin": 0.05},
+    ),
+    "base_height": RewardTermCfg(
+      func=mdp.base_height_penalty,
+      weight=-100.0,
+      params={"target_height": 0.98, "asset_cfg": SceneEntityCfg("robot")},
+    ),
     "survival_bonus": RewardTermCfg(
       func=mdp.survival_bonus,
-      weight=0.15,
+      weight=0.5,
       params={"bonus_per_step": 1.0},
     ),
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=0.3,
+      weight=0.5,
       params={
         "sensor_name": "feet_ground_contact",
         "threshold_min": 0.05,
@@ -439,18 +501,20 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       },
     ),
     "foot_clearance": RewardTermCfg(
-      func=mdp.feet_clearance,
+      func=mdp.feet_clearance_improved,
       weight=-0.5,
       params={
-        "target_height": 0.06,
+        "target_height": 0.08,
+        "min_height": 0.03,
         "command_name": "twist",
         "command_threshold": 0.1,
         "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
+        "sensor_name": "feet_ground_contact",
       },
     ),
     "foot_swing_height": RewardTermCfg(
       func=mdp.feet_swing_height,
-      weight=-0.1,
+      weight=-0.5,
       params={
         "sensor_name": "feet_ground_contact",
         "target_height": 0.06,
@@ -461,7 +525,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "foot_slip": RewardTermCfg(
       func=mdp.feet_slip,
-      weight=-0.05,
+      weight=-0.5,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
@@ -476,6 +540,30 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
         "command_threshold": 0.1,
+      },
+    ),
+    "contact_force_penalty": RewardTermCfg(
+      func=mdp.contact_force_penalty,
+      weight=-1e-4,
+      params={"sensor_name": "feet_ground_contact", "force_threshold": 800.0},
+    ),
+    "stance_contact": RewardTermCfg(
+      func=mdp.stance_contact_reward,
+      weight=0.2,
+      params={
+        "sensor_name": "feet_ground_contact",
+        "command_name": "twist",
+        "command_threshold": 0.1,
+      },
+    ),
+    "single_foot_contact": RewardTermCfg(
+      func=mdp.single_foot_contact,
+      weight=0.5,
+      params={
+        "sensor_name": "feet_ground_contact",
+        "command_name": "twist",
+        "command_threshold": 0.1,
+        "grace_period": 0.2,
       },
     ),
     "stable_upright_under_disturbance": RewardTermCfg(
@@ -512,11 +600,54 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       params={
         "command_name": "twist",
         "velocity_stages": [
-          {"step": 0, "lin_vel_x": (-1.0, 1.0), "ang_vel_z": (-0.5, 0.5)},
-          {"step": 240_000, "lin_vel_x": (-1.2, 1.5), "ang_vel_z": (-0.6, 0.6)},
-          {"step": 480_000, "lin_vel_x": (-1.5, 2.0), "ang_vel_z": (-0.65, 0.65)},
-          {"step": 720_000, "lin_vel_x": (-1.8, 2.5), "ang_vel_z": (-0.7, 0.7)},
-          {"step": 960_000, "lin_vel_x": (-2.0, 3.0), "ang_vel_z": (-0.7, 0.7)},
+          {
+            "step": 0,
+            "lin_vel_x": (-0.5, 0.5),
+            "lin_vel_y": (-0.3, 0.3),
+            "ang_vel_z": (-0.3, 0.3),
+          },
+          {
+            "step": 240_000,
+            "lin_vel_x": (-0.8, 0.8),
+            "lin_vel_y": (-0.5, 0.5),
+            "ang_vel_z": (-0.4, 0.4),
+          },
+          {
+            "step": 480_000,
+            "lin_vel_x": (-1.0, 1.0),
+            "lin_vel_y": (-0.6, 0.6),
+            "ang_vel_z": (-0.5, 0.5),
+          },
+          {
+            "step": 720_000,
+            "lin_vel_x": (-1.2, 1.2),
+            "lin_vel_y": (-0.7, 0.7),
+            "ang_vel_z": (-0.55, 0.55),
+          },
+          {
+            "step": 960_000,
+            "lin_vel_x": (-1.5, 1.5),
+            "lin_vel_y": (-0.8, 0.8),
+            "ang_vel_z": (-0.6, 0.6),
+          },
+          {
+            "step": 1_200_000,
+            "lin_vel_x": (-1.8, 2.0),
+            "lin_vel_y": (-0.9, 0.9),
+            "ang_vel_z": (-0.65, 0.65),
+          },
+          {
+            "step": 1_440_000,
+            "lin_vel_x": (-2.0, 2.5),
+            "lin_vel_y": (-1.0, 1.0),
+            "ang_vel_z": (-0.7, 0.7),
+          },
+          {
+            "step": 1_920_000,
+            "lin_vel_x": (-2.0, 3.0),
+            "lin_vel_y": (-1.0, 1.0),
+            "ang_vel_z": (-0.7, 0.7),
+          },
         ],
       },
     ),
@@ -594,7 +725,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         ls_iterations=20,
       ),
     ),
-    decimation=4,
-    episode_length_s=20.0,
-    reward_clip=2.0,  # Very tight clip so curriculum test (fast phases) finishes without std blowup
+    decimation=2,
+    episode_length_s=10.0,
+    reward_clip=10.0,
   )
