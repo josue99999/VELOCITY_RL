@@ -96,19 +96,24 @@ def commands_vel(
 
 _GK_WINDOW_SIZE = 200  # Rolling window size in completed episodes.
 _GK_MIN_WINDOW = 100  # Minimum episodes required before evaluating conditions.
+# Minimum env steps in a phase before advancement is allowed.  This gate is
+# num_envs-independent: with 24 steps/iter, 10 000 steps ≈ 417 iterations.
+_GK_DEFAULT_MIN_STEPS = 10_000
 
 
 def _init_gk_state(env: ManagerBasedRlEnv, phases: dict) -> None:
   """Initialise metric-gated curriculum state on env (idempotent)."""
   if hasattr(env, "_gk_initialized"):
     return
-  setattr(env, "_gk_phase_key", list(phases.keys())[0])
-  setattr(env, "_gk_phase_episodes", 0)
-  setattr(env, "_gk_fell_window", collections.deque(maxlen=_GK_WINDOW_SIZE))
-  setattr(env, "_gk_ep_len_window", collections.deque(maxlen=_GK_WINDOW_SIZE))
-  setattr(env, "_phase_frozen", True)  # Frozen until enough data is collected.
-  setattr(env, "_episode_offset", 0.0)  # Kept for backward-compat logging only.
-  setattr(env, "_gk_initialized", True)
+  env._gk_phase_key = list(phases.keys())[0]
+  env._gk_phase_episodes = 0
+  env._gk_fell_window = collections.deque(maxlen=_GK_WINDOW_SIZE)
+  env._gk_ep_len_window = collections.deque(maxlen=_GK_WINDOW_SIZE)
+  env._phase_frozen = True  # Frozen until enough data is collected.
+  env._episode_offset = 0.0  # Kept for backward-compat logging only.
+  # Step counter at which the current phase started (for cooldown).
+  env._gk_phase_start_step = env.common_step_counter
+  env._gk_initialized = True
 
 
 def _can_advance_phase(
@@ -118,36 +123,43 @@ def _can_advance_phase(
   max_episode_length: int,
   phase: dict,
   metrics: dict | None,
+  steps_in_phase: int = 0,
 ) -> bool:
   """Return True when ALL phase-advancement conditions are satisfied.
 
   Conditions (all must hold):
-  1. Minimum completed episodes in this phase (safety floor).
-  2. Enough data in the rolling window for statistical significance.
-  3. Rolling success rate (fraction without falls) >= threshold.
-  4. Rolling mean episode-length ratio >= threshold.
-  5. (Optional) Mean reward >= threshold, sourced from runner metrics.
+  1. Minimum env steps in this phase (num_envs-independent cooldown).
+  2. Minimum completed episodes in this phase (safety floor).
+  3. Enough data in the rolling window for statistical significance.
+  4. Rolling success rate (fraction without falls) >= threshold.
+  5. Rolling mean episode-length ratio >= threshold.
+  6. (Optional) Mean reward >= threshold, sourced from runner metrics.
   """
-  # Condition 1: minimum episodes.
+  # Condition 1: minimum env steps (num_envs-independent cooldown).
+  min_steps = phase.get("min_steps_in_phase", _GK_DEFAULT_MIN_STEPS)
+  if steps_in_phase < min_steps:
+    return False
+
+  # Condition 2: minimum episodes.
   if phase_episodes < phase.get("min_episodes_in_phase", 1000):
     return False
 
-  # Condition 2: window has enough data.
+  # Condition 3: window has enough data.
   n = len(fell_window)
   if n < _GK_MIN_WINDOW:
     return False
 
-  # Condition 3: rolling success rate.
+  # Condition 4: rolling success rate.
   success_rate = 1.0 - sum(fell_window) / n
   if success_rate < phase.get("success_rate_min", 0.85):
     return False
 
-  # Condition 4: rolling episode-length ratio.
+  # Condition 5: rolling episode-length ratio.
   ep_len_ratio = (sum(ep_len_window) / n) / max(1, max_episode_length)
   if ep_len_ratio < phase.get("ep_length_ratio_min", 0.75):
     return False
 
-  # Condition 5: optional reward threshold from runner.
+  # Condition 6: optional reward threshold from runner.
   reward_threshold = phase.get("reward_threshold")
   if reward_threshold is not None and metrics is not None:
     mean_reward = metrics.get("mean_reward")
@@ -181,10 +193,10 @@ def gatekeeping_phase_control(
   _init_gk_state(env, phases)
   phase_names = list(phases.keys())
 
-  fell_window: collections.deque[float] = getattr(env, "_gk_fell_window")
-  ep_len_window: collections.deque[float] = getattr(env, "_gk_ep_len_window")
-  phase_episodes: int = getattr(env, "_gk_phase_episodes")
-  phase_key: str = getattr(env, "_gk_phase_key")
+  fell_window: collections.deque[float] = env._gk_fell_window
+  ep_len_window: collections.deque[float] = env._gk_ep_len_window
+  phase_episodes: int = env._gk_phase_episodes
+  phase_key: str = env._gk_phase_key
 
   # --- Update rolling windows from the batch of newly completed episodes. ---
   # reset_terminated is only available after the first env.step(); on the
@@ -198,13 +210,15 @@ def gatekeeping_phase_control(
       fell_window.append(float(fell[i].item()))
       ep_len_window.append(float(ep_lens[i].item()))
     phase_episodes += n_new
-    setattr(env, "_gk_phase_episodes", phase_episodes)
+    env._gk_phase_episodes = phase_episodes
 
   # --- Check phase-advancement conditions. ---
   current_phase = phases[phase_key]
   current_idx = phase_names.index(phase_key)
   is_last = current_idx >= len(phase_names) - 1
   metrics = getattr(env, "_curriculum_metrics", None)
+  phase_start_step: int = getattr(env, "_gk_phase_start_step", 0)
+  steps_in_phase = env.common_step_counter - phase_start_step
   can_advance = _can_advance_phase(
     phase_episodes,
     fell_window,
@@ -212,17 +226,19 @@ def gatekeeping_phase_control(
     env.max_episode_length,
     current_phase,
     metrics,
+    steps_in_phase=steps_in_phase,
   )
 
   if can_advance and not is_last:
     # Advance: reset per-phase counters and windows for the new phase.
-    setattr(env, "_gk_phase_key", phase_names[current_idx + 1])
-    setattr(env, "_gk_phase_episodes", 0)
+    env._gk_phase_key = phase_names[current_idx + 1]
+    env._gk_phase_episodes = 0
+    env._gk_phase_start_step = env.common_step_counter
     fell_window.clear()
     ep_len_window.clear()
-    setattr(env, "_phase_frozen", False)
+    env._phase_frozen = False
   else:
-    setattr(env, "_phase_frozen", not can_advance and not is_last)
+    env._phase_frozen = not can_advance and not is_last
 
   # --- Compute rolling metrics for logging. ---
   n = len(fell_window)
@@ -235,10 +251,11 @@ def gatekeeping_phase_control(
 
   return {
     "phase_frozen": torch.tensor(
-      1.0 if getattr(env, "_phase_frozen") else 0.0, dtype=torch.float32
+      1.0 if env._phase_frozen else 0.0, dtype=torch.float32
     ),
     "gk_phase_index": torch.tensor(float(current_idx + 1), dtype=torch.float32),
     "gk_phase_episodes": torch.tensor(float(phase_episodes), dtype=torch.float32),
+    "gk_steps_in_phase": torch.tensor(float(steps_in_phase), dtype=torch.float32),
     "gk_success_rate": torch.tensor(success_rate, dtype=torch.float32),
     "gk_ep_len_ratio": torch.tensor(ep_len_ratio, dtype=torch.float32),
     "episode_offset": torch.tensor(
@@ -266,8 +283,13 @@ def update_teleop_pushes(
   if push_vel > 0:
     asset = env.scene["robot"]
     ang_vel_mag = torch.norm(asset.data.root_link_ang_vel_w, dim=-1)
+    # Guard against NaN from fallen robots to prevent global config corruption.
+    ang_vel_mag = torch.nan_to_num(ang_vel_mag, nan=0.0, posinf=5.0)
     stress_factor = torch.clamp(1.0 - (ang_vel_mag / 5.0), 0.3, 1.0)
     effective_push_vel = push_vel * stress_factor.mean().item()
+    # Final NaN guard: fall back to the raw phase push_vel.
+    if effective_push_vel != effective_push_vel:  # NaN check
+      effective_push_vel = push_vel
   else:
     effective_push_vel = 0.0
 

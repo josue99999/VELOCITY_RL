@@ -9,7 +9,6 @@ from dataclasses import replace
 
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as envs_mdp
-from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.action_manager import ActionTermCfg
 from mjlab.managers.command_manager import CommandTermCfg
 from mjlab.managers.curriculum_manager import CurriculumTermCfg
@@ -93,10 +92,14 @@ CURRICULUM_PHASES = {
   "pure_walking": {
     "episode_range": (0, 100_000),
     # Phase-advancement conditions.
-    "min_episodes_in_phase": 800,  # Safety floor; real gate is success_rate.
-    "success_rate_min": 0.85,  # < 15 % fall rate required.
-    "ep_length_ratio_min": 0.80,  # Episodes mostly run to time-out.
-    "reward_threshold": None,
+    # min_steps_in_phase: num_envs-independent cooldown.  With 24 steps/iter,
+    # 20 000 steps ≈ 833 iterations of solid training at this phase.
+    "min_steps_in_phase": 20_000,
+    "min_episodes_in_phase": 8_000,
+    "success_rate_min": 0.85,
+    "ep_length_ratio_min": 0.80,
+    # Must achieve positive reward to advance (prevents shuffling).
+    "reward_threshold": 3.0,
     # Arm / disturbance parameters.
     "arm_randomization": False,
     "arm_pose_range": 0.0,
@@ -109,10 +112,11 @@ CURRICULUM_PHASES = {
   },
   "arm_randomization": {
     "episode_range": (100_000, 200_000),
-    "min_episodes_in_phase": 1200,
+    "min_steps_in_phase": 20_000,
+    "min_episodes_in_phase": 8_000,
     "success_rate_min": 0.82,
     "ep_length_ratio_min": 0.78,
-    "reward_threshold": None,
+    "reward_threshold": 2.0,
     "arm_randomization": True,
     "arm_pose_range": 0.25,
     "arm_mass_range": (0.9, 1.1),
@@ -124,10 +128,11 @@ CURRICULUM_PHASES = {
   },
   "arm_pose_exploration": {
     "episode_range": (200_000, 300_000),
-    "min_episodes_in_phase": 1200,
+    "min_steps_in_phase": 25_000,
+    "min_episodes_in_phase": 10_000,
     "success_rate_min": 0.80,
     "ep_length_ratio_min": 0.75,
-    "reward_threshold": None,
+    "reward_threshold": 1.5,
     "arm_randomization": True,
     "arm_pose_range": 0.5,
     "arm_mass_range": (0.8, 1.2),
@@ -139,45 +144,48 @@ CURRICULUM_PHASES = {
   },
   "light_disturbances": {
     "episode_range": (300_000, 400_000),
-    "min_episodes_in_phase": 1500,
+    "min_steps_in_phase": 25_000,
+    "min_episodes_in_phase": 10_000,
     "success_rate_min": 0.77,
     "ep_length_ratio_min": 0.70,
-    "reward_threshold": None,
+    "reward_threshold": 1.0,
     "arm_randomization": True,
     "arm_pose_range": 0.5,
     "arm_mass_range": (0.8, 1.2),
-    "push_velocity": 0.08,
-    "push_interval": (8.0, 15.0),
+    "push_velocity": 0.05,
+    "push_interval": (10.0, 20.0),
     "arm_teleop_max_delta": 0.03,
     "arm_teleop_main_arm_scale": 2.0,
     "arm_teleop_interval_range_s": (0.03, 0.03),
   },
   "moderate_disturbances": {
     "episode_range": (400_000, 500_000),
-    "min_episodes_in_phase": 1500,
+    "min_steps_in_phase": 30_000,
+    "min_episodes_in_phase": 12_000,
     "success_rate_min": 0.74,
     "ep_length_ratio_min": 0.65,
-    "reward_threshold": None,
+    "reward_threshold": 0.5,
     "arm_randomization": True,
     "arm_pose_range": 0.75,
     "arm_mass_range": (0.7, 1.3),
-    "push_velocity": 0.15,
-    "push_interval": (5.0, 8.0),
+    "push_velocity": 0.10,
+    "push_interval": (6.0, 10.0),
     "arm_teleop_max_delta": 0.05,
     "arm_teleop_main_arm_scale": 2.5,
     "arm_teleop_interval_range_s": (0.02, 0.02),
   },
   "full_robustness": {
     "episode_range": (500_000, float("inf")),
-    "min_episodes_in_phase": 0,  # Last phase — no advancement.
+    "min_steps_in_phase": 0,  # Last phase — no advancement.
+    "min_episodes_in_phase": 0,
     "success_rate_min": 0.0,
     "ep_length_ratio_min": 0.0,
     "reward_threshold": None,
     "arm_randomization": True,
     "arm_pose_range": 1.0,
     "arm_mass_range": (0.6, 1.5),
-    "push_velocity": 0.25,
-    "push_interval": (3.0, 5.0),
+    "push_velocity": 0.20,
+    "push_interval": (4.0, 7.0),
     "arm_teleop_max_delta": 0.08,
     "arm_teleop_main_arm_scale": 3.0,
     "arm_teleop_interval_range_s": (0.01, 0.01),
@@ -343,18 +351,21 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "asset_cfg": SceneEntityCfg("robot", joint_names=CONTROLLED_JOINTS),
       },
     ),
+    # Defaults are zero: the curriculum (update_teleop_pushes) sets the real
+    # values based on the current phase.  Keeping defaults at zero prevents
+    # any pushes if the curriculum hasn't run yet.
     "push_robot": EventTermCfg(
       func=mdp.push_by_setting_velocity,
       mode="interval",
       interval_range_s=(1.0, 3.0),
       params={
         "velocity_range": {
-          "x": (-0.5, 0.5),
-          "y": (-0.5, 0.5),
-          "z": (-0.4, 0.4),
-          "roll": (-0.52, 0.52),
-          "pitch": (-0.52, 0.52),
-          "yaw": (-0.78, 0.78),
+          "x": (0.0, 0.0),
+          "y": (0.0, 0.0),
+          "z": (0.0, 0.0),
+          "roll": (0.0, 0.0),
+          "pitch": (0.0, 0.0),
+          "yaw": (0.0, 0.0),
         },
       },
     ),
@@ -435,14 +446,16 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "asset_cfg": SceneEntityCfg("robot", body_names=ARM_AND_HAND_BODIES),
       },
     ),
+    # Defaults are zero: the curriculum (update_arm_teleop_continuous) sets
+    # the real values based on the current phase.
     "arm_pose_continuous_teleop": EventTermCfg(
       func=mdp.events.arm_pose_continuous_teleop,
       mode="interval",
       interval_range_s=(0.02, 0.02),
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=ARM_AND_HAND_JOINTS),
-        "max_delta": 0.04,
-        "main_arm_scale": 2.0,
+        "max_delta": 0.0,
+        "main_arm_scale": 1.0,
       },
     ),
   }
@@ -479,7 +492,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "std_standing": {},  # Set per-robot (env_cfgs fills these).
         "std_walking": {},  # Set per-robot.
         "std_running": {},  # Set per-robot.
-        "walking_threshold": 0.1,
+        "walking_threshold": 0.3,
         "running_threshold": 1.5,
       },
     ),
@@ -509,7 +522,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "zmp_stability": RewardTermCfg(
       func=mdp.zmp_stability_reward,
-      weight=0.1,
+      weight=0.02,
       params={"asset_cfg": SceneEntityCfg("robot"), "support_polygon_margin": 0.05},
     ),
     "base_height": RewardTermCfg(
@@ -519,28 +532,28 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "survival_bonus": RewardTermCfg(
       func=mdp.survival_bonus,
-      weight=2.0,
+      weight=0.5,
       params={"bonus_per_step": 1.0},
     ),
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=1.5,
+      weight=3.0,
       params={
         "sensor_name": "feet_ground_contact",
         "threshold_min": 0.05,
         "threshold_max": 0.3,
         "command_name": "twist",
-        "command_threshold": 0.1,
+        "command_threshold": 0.05,
       },
     ),
     "foot_clearance": RewardTermCfg(
       func=mdp.feet_clearance_improved,
-      weight=-0.2,
+      weight=-0.5,
       params={
         "target_height": 0.08,
         "min_height": 0.03,
         "command_name": "twist",
-        "command_threshold": 0.1,
+        "command_threshold": 0.05,
         "asset_cfg": SceneEntityCfg("robot", site_names=()),  # Set per-robot.
         "sensor_name": "feet_ground_contact",
       },
@@ -582,7 +595,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "stance_contact": RewardTermCfg(
       func=mdp.stance_contact_reward,
-      weight=0.2,
+      weight=0.0,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
@@ -641,48 +654,48 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "velocity_stages": [
           {
             "step": 0,
-            "lin_vel_x": (-0.3, 0.3),
-            "lin_vel_y": (-0.2, 0.2),
-            "ang_vel_z": (-0.2, 0.2),
+            "lin_vel_x": (-0.5, 0.5),
+            "lin_vel_y": (-0.3, 0.3),
+            "ang_vel_z": (-0.3, 0.3),
           },
           {
-            "step": 240_000,
+            "step": 200_000,
             "lin_vel_x": (-0.8, 0.8),
             "lin_vel_y": (-0.5, 0.5),
             "ang_vel_z": (-0.4, 0.4),
           },
           {
-            "step": 480_000,
+            "step": 400_000,
             "lin_vel_x": (-1.0, 1.0),
             "lin_vel_y": (-0.6, 0.6),
             "ang_vel_z": (-0.5, 0.5),
           },
           {
-            "step": 720_000,
+            "step": 600_000,
             "lin_vel_x": (-1.2, 1.2),
             "lin_vel_y": (-0.7, 0.7),
             "ang_vel_z": (-0.55, 0.55),
           },
           {
-            "step": 960_000,
+            "step": 800_000,
             "lin_vel_x": (-1.5, 1.5),
             "lin_vel_y": (-0.8, 0.8),
             "ang_vel_z": (-0.6, 0.6),
           },
           {
-            "step": 1_200_000,
+            "step": 1_000_000,
             "lin_vel_x": (-1.8, 2.0),
             "lin_vel_y": (-0.9, 0.9),
             "ang_vel_z": (-0.65, 0.65),
           },
           {
-            "step": 1_440_000,
+            "step": 1_200_000,
             "lin_vel_x": (-2.0, 2.5),
             "lin_vel_y": (-1.0, 1.0),
             "ang_vel_z": (-0.7, 0.7),
           },
           {
-            "step": 1_920_000,
+            "step": 1_500_000,
             "lin_vel_x": (-2.0, 3.0),
             "lin_vel_y": (-1.0, 1.0),
             "ang_vel_z": (-0.7, 0.7),
@@ -752,8 +765,8 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       azimuth=90.0,
     ),
     sim=SimulationCfg(
-      nconmax=35,
-      njmax=1500,
+      nconmax=256,
+      njmax=4096,
       mujoco=MujocoCfg(
         timestep=0.005,
         iterations=10,
