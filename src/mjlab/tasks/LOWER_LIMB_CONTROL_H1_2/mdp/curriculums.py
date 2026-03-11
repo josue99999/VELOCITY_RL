@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections
 from typing import TYPE_CHECKING, TypedDict, cast
 
 import torch
@@ -93,69 +94,67 @@ def commands_vel(
   }
 
 
-def _get_current_phase_key(env: ManagerBasedRlEnv, phases: dict) -> str:
-  """Return current phase key (name) for threshold lookup."""
-  episodes = env.common_step_counter / env.max_episode_length
-  offset = getattr(env, "_episode_offset", 0)
-  effective_episodes = episodes - offset
-  for phase_name, phase_info in phases.items():
-    min_ep, max_ep = phase_info["episode_range"]
-    if min_ep <= effective_episodes < max_ep:
-      return phase_name
-  return list(phases.keys())[-1]
+_GK_WINDOW_SIZE = 200  # Rolling window size in completed episodes.
+_GK_MIN_WINDOW = 100  # Minimum episodes required before evaluating conditions.
 
 
-# Thresholds (reward_threshold, fell_over_threshold) per phase for gatekeeping.
-_PHASE_THRESHOLDS: dict[str, tuple[float, float]] = {
-  "light_disturbances": (45.0, 0.12),
-  "moderate_disturbances": (48.0, 0.15),
-  "full_robustness": (50.0, 0.18),
-}
-_DEFAULT_THRESHOLDS = (45.0, 0.15)
-
-
-def update_episode_offset(
-  env: ManagerBasedRlEnv,
-  metrics: dict | None,
-  phases: dict,
-  offset_increment: float = 10.0,
-  max_offset: float = 500.0,
-) -> None:
-  """Gatekeeping: increase episode_offset when metrics are bad so phase advance slows.
-  Sets env._phase_frozen for WandB logging. Call from runner with env._curriculum_metrics.
-  """
-  if metrics is None:
-    setattr(env, "_phase_frozen", False)
+def _init_gk_state(env: ManagerBasedRlEnv, phases: dict) -> None:
+  """Initialise metric-gated curriculum state on env (idempotent)."""
+  if hasattr(env, "_gk_initialized"):
     return
+  setattr(env, "_gk_phase_key", list(phases.keys())[0])
+  setattr(env, "_gk_phase_episodes", 0)
+  setattr(env, "_gk_fell_window", collections.deque(maxlen=_GK_WINDOW_SIZE))
+  setattr(env, "_gk_ep_len_window", collections.deque(maxlen=_GK_WINDOW_SIZE))
+  setattr(env, "_phase_frozen", True)  # Frozen until enough data is collected.
+  setattr(env, "_episode_offset", 0.0)  # Kept for backward-compat logging only.
+  setattr(env, "_gk_initialized", True)
 
-  phase_key = _get_current_phase_key(env, phases)
-  reward_threshold, fell_over_threshold = _PHASE_THRESHOLDS.get(
-    phase_key, _DEFAULT_THRESHOLDS
-  )
 
-  mean_reward = metrics.get("mean_reward")
-  value_loss = metrics.get("value_loss")
-  fell_over_rate = metrics.get("fell_over_rate")
+def _can_advance_phase(
+  phase_episodes: int,
+  fell_window: collections.deque[float],
+  ep_len_window: collections.deque[float],
+  max_episode_length: int,
+  phase: dict,
+  metrics: dict | None,
+) -> bool:
+  """Return True when ALL phase-advancement conditions are satisfied.
 
-  bad = False
-  if mean_reward is not None and mean_reward < reward_threshold:
-    bad = True
-  if value_loss is not None:
-    v = value_loss
-    if isinstance(v, torch.Tensor):
-      if torch.isnan(v).any() or torch.isinf(v).any():
-        bad = True
-    elif v != v or v == float("inf"):
-      bad = True
-  if fell_over_rate is not None and fell_over_rate > fell_over_threshold:
-    bad = True
+  Conditions (all must hold):
+  1. Minimum completed episodes in this phase (safety floor).
+  2. Enough data in the rolling window for statistical significance.
+  3. Rolling success rate (fraction without falls) >= threshold.
+  4. Rolling mean episode-length ratio >= threshold.
+  5. (Optional) Mean reward >= threshold, sourced from runner metrics.
+  """
+  # Condition 1: minimum episodes.
+  if phase_episodes < phase.get("min_episodes_in_phase", 1000):
+    return False
 
-  if bad:
-    offset = getattr(env, "_episode_offset", 0)
-    setattr(env, "_episode_offset", min(offset + offset_increment, max_offset))
-    setattr(env, "_phase_frozen", True)
-  else:
-    setattr(env, "_phase_frozen", False)
+  # Condition 2: window has enough data.
+  n = len(fell_window)
+  if n < _GK_MIN_WINDOW:
+    return False
+
+  # Condition 3: rolling success rate.
+  success_rate = 1.0 - sum(fell_window) / n
+  if success_rate < phase.get("success_rate_min", 0.85):
+    return False
+
+  # Condition 4: rolling episode-length ratio.
+  ep_len_ratio = (sum(ep_len_window) / n) / max(1, max_episode_length)
+  if ep_len_ratio < phase.get("ep_length_ratio_min", 0.75):
+    return False
+
+  # Condition 5: optional reward threshold from runner.
+  reward_threshold = phase.get("reward_threshold")
+  if reward_threshold is not None and metrics is not None:
+    mean_reward = metrics.get("mean_reward")
+    if mean_reward is None or mean_reward < reward_threshold:
+      return False
+
+  return True
 
 
 def gatekeeping_phase_control(
@@ -163,18 +162,85 @@ def gatekeeping_phase_control(
   env_ids: torch.Tensor,
   phases: dict,
 ) -> dict[str, torch.Tensor]:
-  """Curriculum term that updates episode offset based on metrics.
-  Expects env._curriculum_metrics to be set by the runner after each iteration.
+  """Metric-gated curriculum phase control.
+
+  Phases advance only when ALL of the following conditions are simultaneously
+  satisfied:
+  - Minimum completed episodes in the current phase (safety floor so phase
+    transitions cannot happen on statistical noise alone).
+  - Rolling success rate (fraction of episodes without falls) >= threshold.
+  - Rolling mean episode-length ratio (actual / max episode steps) >= threshold.
+  - (Optional) Mean reward >= threshold, supplied by the runner each iteration.
+
+  Episode-level data (fall flag, episode length) is read directly from
+  ``env.reset_terminated[env_ids]`` and ``env.episode_length_buf[env_ids]``,
+  which are guaranteed valid at the time curriculum terms are called (before
+  episode buffers are zeroed). This removes any dependency on runner-provided
+  metrics for the critical fall-rate gate.
   """
+  _init_gk_state(env, phases)
+  phase_names = list(phases.keys())
+
+  fell_window: collections.deque[float] = getattr(env, "_gk_fell_window")
+  ep_len_window: collections.deque[float] = getattr(env, "_gk_ep_len_window")
+  phase_episodes: int = getattr(env, "_gk_phase_episodes")
+  phase_key: str = getattr(env, "_gk_phase_key")
+
+  # --- Update rolling windows from the batch of newly completed episodes. ---
+  n_new = len(env_ids)
+  if n_new > 0:
+    # reset_terminated: True = terminated (fell), False = timed-out (survived).
+    fell = env.reset_terminated[env_ids]
+    ep_lens = env.episode_length_buf[env_ids].float()
+    for i in range(n_new):
+      fell_window.append(float(fell[i].item()))
+      ep_len_window.append(float(ep_lens[i].item()))
+    phase_episodes += n_new
+    setattr(env, "_gk_phase_episodes", phase_episodes)
+
+  # --- Check phase-advancement conditions. ---
+  current_phase = phases[phase_key]
+  current_idx = phase_names.index(phase_key)
+  is_last = current_idx >= len(phase_names) - 1
   metrics = getattr(env, "_curriculum_metrics", None)
-  update_episode_offset(env, metrics, phases)
+  can_advance = _can_advance_phase(
+    phase_episodes,
+    fell_window,
+    ep_len_window,
+    env.max_episode_length,
+    current_phase,
+    metrics,
+  )
+
+  if can_advance and not is_last:
+    # Advance: reset per-phase counters and windows for the new phase.
+    setattr(env, "_gk_phase_key", phase_names[current_idx + 1])
+    setattr(env, "_gk_phase_episodes", 0)
+    fell_window.clear()
+    ep_len_window.clear()
+    setattr(env, "_phase_frozen", False)
+  else:
+    setattr(env, "_phase_frozen", not can_advance and not is_last)
+
+  # --- Compute rolling metrics for logging. ---
+  n = len(fell_window)
+  if n >= _GK_MIN_WINDOW:
+    success_rate = 1.0 - sum(fell_window) / n
+    ep_len_ratio = (sum(ep_len_window) / n) / max(1, env.max_episode_length)
+  else:
+    success_rate = 0.0
+    ep_len_ratio = 0.0
+
   return {
-    "episode_offset": torch.tensor(
-      float(getattr(env, "_episode_offset", 0)), dtype=torch.float32
-    ),
     "phase_frozen": torch.tensor(
-      1.0 if getattr(env, "_phase_frozen", False) else 0.0,
-      dtype=torch.float32,
+      1.0 if getattr(env, "_phase_frozen") else 0.0, dtype=torch.float32
+    ),
+    "gk_phase_index": torch.tensor(float(current_idx + 1), dtype=torch.float32),
+    "gk_phase_episodes": torch.tensor(float(phase_episodes), dtype=torch.float32),
+    "gk_success_rate": torch.tensor(success_rate, dtype=torch.float32),
+    "gk_ep_len_ratio": torch.tensor(ep_len_ratio, dtype=torch.float32),
+    "episode_offset": torch.tensor(
+      float(getattr(env, "_episode_offset", 0.0)), dtype=torch.float32
     ),
   }
 
@@ -266,22 +332,14 @@ def log_phase_curriculum(
 ) -> dict[str, torch.Tensor]:
   """Return current phase metrics for WandB (arm pose, mass, phase index, gatekeeping)."""
   del env_ids  # Unused.
-  episodes = env.common_step_counter / env.max_episode_length
-  offset = getattr(env, "_episode_offset", 0)
-  effective_episodes = episodes - offset
 
+  # Use metric-gated phase key when available (set by gatekeeping_phase_control,
+  # which runs earlier in the curriculum dict).
   phase_names = list(phases.keys())
-  current_phase_key = None
-  phase_index = 0
-  for i, phase_name in enumerate(phase_names):
-    min_ep, max_ep = phases[phase_name]["episode_range"]
-    if min_ep <= effective_episodes < max_ep:
-      current_phase_key = phase_name
-      phase_index = i
-      break
-  if current_phase_key is None:
-    phase_index = len(phase_names) - 1
+  current_phase_key: str = getattr(env, "_gk_phase_key", None) or phase_names[0]
+  if current_phase_key not in phases:
     current_phase_key = phase_names[-1]
+  phase_index = phase_names.index(current_phase_key)
   phase = phases[current_phase_key]
 
   arm_rand = 1.0 if phase.get("arm_randomization", False) else 0.0
@@ -294,29 +352,47 @@ def log_phase_curriculum(
   arm_teleop_max_delta = float(phase.get("arm_teleop_max_delta", 0.0))
   arm_teleop_main_arm_scale = float(phase.get("arm_teleop_main_arm_scale", 1.0))
   arm_log = getattr(env, "_arm_teleop_log", {})
-  delta_norm = arm_log.get("delta_norm", 0.0)
-  delta_mean_abs = arm_log.get("delta_mean_abs", 0.0)
-  pose_sample_mean = arm_log.get("pose_sample_mean", 0.0)
-  pose_sample_std = arm_log.get("pose_sample_std", 0.0)
+
+  # Gatekeeping metrics from _gk_* state (set by gatekeeping_phase_control).
+  _fell_w: collections.deque[float] = getattr(
+    env, "_gk_fell_window", collections.deque()
+  )
+  n = len(_fell_w)
+  if n >= _GK_MIN_WINDOW:
+    _ep_len_w: collections.deque[float] = getattr(
+      env, "_gk_ep_len_window", collections.deque()
+    )
+    gk_success_rate = 1.0 - sum(_fell_w) / n
+    gk_ep_len_ratio = (sum(_ep_len_w) / n) / max(1, env.max_episode_length)
+  else:
+    gk_success_rate = 0.0
+    gk_ep_len_ratio = 0.0
+
+  # Success threshold for current phase (for reference in WandB).
+  success_threshold = float(phase.get("success_rate_min", 0.85))
+  min_episodes_threshold = float(phase.get("min_episodes_in_phase", 1000))
 
   return {
-    "phase_index": torch.tensor(phase_index + 1),
+    "phase_index": torch.tensor(float(phase_index + 1)),
     "arm_randomization": torch.tensor(arm_rand),
     "arm_pose_range": torch.tensor(pose_range),
     "arm_mass_min": torch.tensor(mass_min),
     "arm_mass_max": torch.tensor(mass_max),
-    "episodes_approx": torch.tensor(episodes),
-    "episodes_effective": torch.tensor(effective_episodes),
     "phase_frozen": torch.tensor(1.0 if getattr(env, "_phase_frozen", False) else 0.0),
-    "episode_offset": torch.tensor(
-      float(getattr(env, "_episode_offset", 0)),
-      dtype=torch.float32,
+    "gk_phase_episodes": torch.tensor(
+      float(getattr(env, "_gk_phase_episodes", 0)), dtype=torch.float32
+    ),
+    "gk_success_rate": torch.tensor(gk_success_rate, dtype=torch.float32),
+    "gk_ep_len_ratio": torch.tensor(gk_ep_len_ratio, dtype=torch.float32),
+    "gk_success_threshold": torch.tensor(success_threshold, dtype=torch.float32),
+    "gk_min_episodes_threshold": torch.tensor(
+      min_episodes_threshold, dtype=torch.float32
     ),
     "arm_teleop_max_delta": torch.tensor(arm_teleop_max_delta),
     "arm_teleop_main_arm_scale": torch.tensor(arm_teleop_main_arm_scale),
     "arm_teleop_active": torch.tensor(1.0 if arm_teleop_max_delta > 0 else 0.0),
-    "arm_teleop_last_delta_norm": torch.tensor(delta_norm),
-    "arm_teleop_last_delta_mean_abs": torch.tensor(delta_mean_abs),
-    "arm_teleop_last_pose_mean": torch.tensor(pose_sample_mean),
-    "arm_teleop_last_pose_std": torch.tensor(pose_sample_std),
+    "arm_teleop_last_delta_norm": torch.tensor(arm_log.get("delta_norm", 0.0)),
+    "arm_teleop_last_delta_mean_abs": torch.tensor(arm_log.get("delta_mean_abs", 0.0)),
+    "arm_teleop_last_pose_mean": torch.tensor(arm_log.get("pose_sample_mean", 0.0)),
+    "arm_teleop_last_pose_std": torch.tensor(arm_log.get("pose_sample_std", 0.0)),
   }

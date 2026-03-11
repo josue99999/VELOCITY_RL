@@ -79,12 +79,25 @@ ARM_AND_HAND_BODIES = (
   ".*_pinky_.*",
 )
 
-# Phases use episodes = common_step_counter / max_episode_length.
-# 6-phase curriculum: 250 episodes per phase (~10k iterations each at ~200 iter per 5 ep).
-# arm_randomization required by randomize_arm_pose / randomize_arm_mass events.
+# Metric-gated 6-phase curriculum.
+#
+# Phase advancement requires ALL conditions to hold simultaneously:
+#   - min_episodes_in_phase: completed episodes in this phase (safety floor).
+#   - success_rate_min: rolling fraction of episodes without falls (last 200 eps).
+#   - ep_length_ratio_min: rolling mean(ep_len)/max_ep_len (last 200 eps).
+#   - reward_threshold: (optional) mean reward from runner metrics.
+#
+# episode_range is kept as metadata for backward-compat logging; the actual
+# gate is the per-phase metric conditions above, evaluated by gatekeeping_phase_control.
 CURRICULUM_PHASES = {
   "pure_walking": {
-    "episode_range": (0, 5),
+    "episode_range": (0, 100_000),
+    # Phase-advancement conditions.
+    "min_episodes_in_phase": 800,  # Safety floor; real gate is success_rate.
+    "success_rate_min": 0.85,  # < 15 % fall rate required.
+    "ep_length_ratio_min": 0.80,  # Episodes mostly run to time-out.
+    "reward_threshold": None,
+    # Arm / disturbance parameters.
     "arm_randomization": False,
     "arm_pose_range": 0.0,
     "arm_mass_range": (1.0, 1.0),
@@ -95,7 +108,11 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.1, 0.1),
   },
   "arm_randomization": {
-    "episode_range": (5, 10),
+    "episode_range": (100_000, 200_000),
+    "min_episodes_in_phase": 1200,
+    "success_rate_min": 0.82,
+    "ep_length_ratio_min": 0.78,
+    "reward_threshold": None,
     "arm_randomization": True,
     "arm_pose_range": 0.25,
     "arm_mass_range": (0.9, 1.1),
@@ -106,7 +123,11 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.1, 0.1),
   },
   "arm_pose_exploration": {
-    "episode_range": (10, 15),
+    "episode_range": (200_000, 300_000),
+    "min_episodes_in_phase": 1200,
+    "success_rate_min": 0.80,
+    "ep_length_ratio_min": 0.75,
+    "reward_threshold": None,
     "arm_randomization": True,
     "arm_pose_range": 0.5,
     "arm_mass_range": (0.8, 1.2),
@@ -117,7 +138,11 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.05, 0.05),
   },
   "light_disturbances": {
-    "episode_range": (15, 20),
+    "episode_range": (300_000, 400_000),
+    "min_episodes_in_phase": 1500,
+    "success_rate_min": 0.77,
+    "ep_length_ratio_min": 0.70,
+    "reward_threshold": None,
     "arm_randomization": True,
     "arm_pose_range": 0.5,
     "arm_mass_range": (0.8, 1.2),
@@ -128,7 +153,11 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.03, 0.03),
   },
   "moderate_disturbances": {
-    "episode_range": (20, 25),
+    "episode_range": (400_000, 500_000),
+    "min_episodes_in_phase": 1500,
+    "success_rate_min": 0.74,
+    "ep_length_ratio_min": 0.65,
+    "reward_threshold": None,
     "arm_randomization": True,
     "arm_pose_range": 0.75,
     "arm_mass_range": (0.7, 1.3),
@@ -139,7 +168,11 @@ CURRICULUM_PHASES = {
     "arm_teleop_interval_range_s": (0.02, 0.02),
   },
   "full_robustness": {
-    "episode_range": (25, float("inf")),
+    "episode_range": (500_000, float("inf")),
+    "min_episodes_in_phase": 0,  # Last phase — no advancement.
+    "success_rate_min": 0.0,
+    "ep_length_ratio_min": 0.0,
+    "reward_threshold": None,
     "arm_randomization": True,
     "arm_pose_range": 1.0,
     "arm_mass_range": (0.6, 1.5),
@@ -590,6 +623,12 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
   ##
 
   curriculum = {
+    # gatekeeping MUST be first: it sets env._gk_phase_key which is read by
+    # get_current_phase() in all subsequent curriculum / event terms.
+    "gatekeeping": CurriculumTermCfg(
+      func=mdp.gatekeeping_phase_control,
+      params={"phases": CURRICULUM_PHASES},
+    ),
     "terrain_levels": CurriculumTermCfg(
       func=mdp.terrain_levels_vel,
       params={"command_name": "twist"},
@@ -667,10 +706,6 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "phase_info": CurriculumTermCfg(
       func=mdp.log_phase_curriculum,
-      params={"phases": CURRICULUM_PHASES},
-    ),
-    "gatekeeping": CurriculumTermCfg(
-      func=mdp.gatekeeping_phase_control,
       params={"phases": CURRICULUM_PHASES},
     ),
   }

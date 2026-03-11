@@ -7,24 +7,26 @@ from mjlab.managers.scene_entity_config import SceneEntityCfg
 
 
 def get_current_phase(env: ManagerBasedRlEnv, phases: dict) -> dict:
-  """Helper to determine the current curriculum phase based on episode count.
-  Uses episode_offset to slow phase advance when metrics are bad (gatekeeping).
+  """Return current phase info.
+
+  Uses ``env._gk_phase_key`` when set by the metric-gated curriculum
+  (``gatekeeping_phase_control``). Falls back to episode-count arithmetic so
+  the function stays backward-compatible with any environment that has not yet
+  initialised the gatekeeping state.
   """
+  phase_key: str | None = getattr(env, "_gk_phase_key", None)
+  if phase_key is not None and phase_key in phases:
+    return phases[phase_key]
+
+  # Legacy fallback: episode-count + offset.
   episodes = env.common_step_counter / env.max_episode_length
   offset = getattr(env, "_episode_offset", 0)
   effective_episodes = episodes - offset
-
-  current_phase_key = None
   for phase_name, phase_info in phases.items():
     min_ep, max_ep = phase_info["episode_range"]
     if min_ep <= effective_episodes < max_ep:
-      current_phase_key = phase_name
-      break
-
-  if current_phase_key is None:
-    current_phase_key = list(phases.keys())[-1]
-
-  return phases[current_phase_key]
+      return phase_info
+  return list(phases.values())[-1]
 
 
 def randomize_arm_pose_phase_based(
