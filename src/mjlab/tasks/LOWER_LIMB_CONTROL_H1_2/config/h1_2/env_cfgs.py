@@ -130,8 +130,8 @@ def unitree_h1_2_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     cfg.rewards[reward_name].params["asset_cfg"].site_names = site_names
 
   cfg.rewards["body_ang_vel"].weight = -0.05
-  cfg.rewards["angular_momentum"].weight = -0.02
-  cfg.rewards["air_time"].weight = 1.0
+  cfg.rewards["angular_momentum"].weight = -0.005
+  cfg.rewards["air_time"].weight = 1.5
 
   cfg.rewards["self_collisions"] = RewardTermCfg(
     func=mdp.self_collision_cost,

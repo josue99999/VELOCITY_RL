@@ -398,7 +398,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       func=mdp.randomize_link_masses,
       params={
         "asset_cfg": SceneEntityCfg("robot"),
-        "mass_range": (0.8, 1.2),
+        "mass_range": (0.9, 1.1),
       },
     ),
     "randomize_link_inertia": EventTermCfg(
@@ -406,15 +406,15 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       func=mdp.randomize_link_inertia,
       params={
         "asset_cfg": SceneEntityCfg("robot"),
-        "inertia_range": (0.8, 1.2),
+        "inertia_range": (0.9, 1.1),
       },
     ),
     "randomize_pd_gains": EventTermCfg(
       mode="reset",
       func=mdp.randomize_pd_gains,
       params={
-        "kp_range": (0.8, 1.2),
-        "kd_range": (0.8, 1.2),
+        "kp_range": (0.9, 1.1),
+        "kd_range": (0.9, 1.1),
         # Apply PD gain randomization to all actuators of the robot.
         "asset_cfg": SceneEntityCfg("robot"),
       },
@@ -454,17 +454,17 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
   rewards = {
     "track_linear_velocity": RewardTermCfg(
       func=mdp.track_linear_velocity,
-      weight=1.0,
+      weight=5.0,
       params={"command_name": "twist", "std": math.sqrt(0.25)},
     ),
     "track_angular_velocity": RewardTermCfg(
       func=mdp.track_angular_velocity,
-      weight=0.5,
+      weight=2.5,
       params={"command_name": "twist", "std": math.sqrt(0.5)},
     ),
     "upright": RewardTermCfg(
       func=mdp.flat_orientation,
-      weight=2.0,
+      weight=1.5,
       params={
         "std": math.sqrt(0.3),
         "asset_cfg": SceneEntityCfg("robot", body_names=()),  # Set per-robot.
@@ -472,7 +472,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "pose": RewardTermCfg(
       func=mdp.variable_posture,
-      weight=0.8,
+      weight=0.3,
       params={
         "asset_cfg": SceneEntityCfg("robot", joint_names=CONTROLLED_JOINTS),
         "command_name": "twist",
@@ -509,33 +509,33 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "zmp_stability": RewardTermCfg(
       func=mdp.zmp_stability_reward,
-      weight=0.3,
+      weight=0.1,
       params={"asset_cfg": SceneEntityCfg("robot"), "support_polygon_margin": 0.05},
     ),
     "base_height": RewardTermCfg(
       func=mdp.base_height_penalty,
-      weight=-100.0,
+      weight=-1.0,
       params={"target_height": 0.98, "asset_cfg": SceneEntityCfg("robot")},
     ),
     "survival_bonus": RewardTermCfg(
       func=mdp.survival_bonus,
-      weight=0.5,
+      weight=2.0,
       params={"bonus_per_step": 1.0},
     ),
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=0.5,
+      weight=1.5,
       params={
         "sensor_name": "feet_ground_contact",
         "threshold_min": 0.05,
         "threshold_max": 0.3,
         "command_name": "twist",
-        "command_threshold": 0.5,
+        "command_threshold": 0.1,
       },
     ),
     "foot_clearance": RewardTermCfg(
       func=mdp.feet_clearance_improved,
-      weight=-0.5,
+      weight=-0.2,
       params={
         "target_height": 0.08,
         "min_height": 0.03,
@@ -547,7 +547,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "foot_swing_height": RewardTermCfg(
       func=mdp.feet_swing_height,
-      weight=-0.5,
+      weight=-0.2,
       params={
         "sensor_name": "feet_ground_contact",
         "target_height": 0.06,
@@ -558,7 +558,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "foot_slip": RewardTermCfg(
       func=mdp.feet_slip,
-      weight=-0.5,
+      weight=-0.2,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
@@ -641,9 +641,9 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
         "velocity_stages": [
           {
             "step": 0,
-            "lin_vel_x": (-0.5, 0.5),
-            "lin_vel_y": (-0.3, 0.3),
-            "ang_vel_z": (-0.3, 0.3),
+            "lin_vel_x": (-0.3, 0.3),
+            "lin_vel_y": (-0.2, 0.2),
+            "ang_vel_z": (-0.2, 0.2),
           },
           {
             "step": 240_000,

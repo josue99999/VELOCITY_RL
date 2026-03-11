@@ -15,7 +15,7 @@ def unitree_h1_2_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
       activation="elu",
       obs_normalization=True,
       stochastic=True,
-      init_noise_std=1.0,
+      init_noise_std=1.5,
     ),
     critic=RslRlModelCfg(
       hidden_dims=(512, 256, 128),
@@ -28,7 +28,7 @@ def unitree_h1_2_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
       value_loss_coef=0.5,
       use_clipped_value_loss=True,
       clip_param=0.2,
-      entropy_coef=0.01,
+      entropy_coef=0.02,
       num_learning_epochs=8,
       num_mini_batches=4,
       learning_rate=3.0e-4,
