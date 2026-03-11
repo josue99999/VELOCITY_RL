@@ -187,8 +187,10 @@ def gatekeeping_phase_control(
   phase_key: str = getattr(env, "_gk_phase_key")
 
   # --- Update rolling windows from the batch of newly completed episodes. ---
+  # reset_terminated is only available after the first env.step(); on the
+  # initial env.reset() call it does not exist yet — skip in that case.
   n_new = len(env_ids)
-  if n_new > 0:
+  if n_new > 0 and hasattr(env, "reset_terminated"):
     # reset_terminated: True = terminated (fell), False = timed-out (survived).
     fell = env.reset_terminated[env_ids]
     ep_lens = env.episode_length_buf[env_ids].float()
