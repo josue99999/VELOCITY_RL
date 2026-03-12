@@ -97,8 +97,9 @@ def commands_vel(
 _GK_WINDOW_SIZE = 200  # Rolling window size in completed episodes.
 _GK_MIN_WINDOW = 100  # Minimum episodes required before evaluating conditions.
 # Minimum env steps in a phase before advancement is allowed.  This gate is
-# num_envs-independent: with 24 steps/iter, 10 000 steps ≈ 417 iterations.
-_GK_DEFAULT_MIN_STEPS = 10_000
+# num_envs-independent.  With num_steps_per_env=24:
+#   iterations = env_steps / 24  →  240 000 steps = 10 000 iterations.
+_GK_DEFAULT_MIN_STEPS = 240_000
 
 
 def _init_gk_state(env: ManagerBasedRlEnv, phases: dict) -> None:

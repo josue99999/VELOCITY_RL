@@ -92,9 +92,10 @@ CURRICULUM_PHASES = {
   "pure_walking": {
     "episode_range": (0, 100_000),
     # Phase-advancement conditions.
-    # min_steps_in_phase: num_envs-independent cooldown.  With 24 steps/iter,
-    # 20 000 steps ≈ 833 iterations of solid training at this phase.
-    "min_steps_in_phase": 20_000,
+    # min_steps_in_phase counts ENV STEPS (not iterations).
+    # With num_steps_per_env=24: iterations = env_steps / 24.
+    # 240_000 env steps = 10_000 iterations.
+    "min_steps_in_phase": 240_000,
     "min_episodes_in_phase": 8_000,
     "success_rate_min": 0.85,
     "ep_length_ratio_min": 0.80,
@@ -112,7 +113,7 @@ CURRICULUM_PHASES = {
   },
   "arm_randomization": {
     "episode_range": (100_000, 200_000),
-    "min_steps_in_phase": 20_000,
+    "min_steps_in_phase": 240_000,  # 10_000 iterations
     "min_episodes_in_phase": 8_000,
     "success_rate_min": 0.82,
     "ep_length_ratio_min": 0.78,
@@ -128,7 +129,7 @@ CURRICULUM_PHASES = {
   },
   "arm_pose_exploration": {
     "episode_range": (200_000, 300_000),
-    "min_steps_in_phase": 25_000,
+    "min_steps_in_phase": 240_000,  # 10_000 iterations
     "min_episodes_in_phase": 10_000,
     "success_rate_min": 0.80,
     "ep_length_ratio_min": 0.75,
@@ -144,7 +145,7 @@ CURRICULUM_PHASES = {
   },
   "light_disturbances": {
     "episode_range": (300_000, 400_000),
-    "min_steps_in_phase": 25_000,
+    "min_steps_in_phase": 240_000,  # 10_000 iterations
     "min_episodes_in_phase": 10_000,
     "success_rate_min": 0.77,
     "ep_length_ratio_min": 0.70,
@@ -160,7 +161,7 @@ CURRICULUM_PHASES = {
   },
   "moderate_disturbances": {
     "episode_range": (400_000, 500_000),
-    "min_steps_in_phase": 30_000,
+    "min_steps_in_phase": 240_000,  # 10_000 iterations
     "min_episodes_in_phase": 12_000,
     "success_rate_min": 0.74,
     "ep_length_ratio_min": 0.65,
