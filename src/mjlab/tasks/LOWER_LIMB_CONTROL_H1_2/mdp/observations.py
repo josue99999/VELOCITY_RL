@@ -19,7 +19,8 @@ def foot_height(
   env: ManagerBasedRlEnv, asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG
 ) -> torch.Tensor:
   asset: Entity = env.scene[asset_cfg.name]
-  return asset.data.site_pos_w[:, asset_cfg.site_ids, 2]  # (num_envs, num_sites)
+  result = asset.data.site_pos_w[:, asset_cfg.site_ids, 2]
+  return torch.nan_to_num(result, nan=0.0)
 
 
 def foot_air_time(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
@@ -27,9 +28,7 @@ def foot_air_time(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
   sensor_data = sensor.data
   current_air_time = sensor_data.current_air_time
   assert current_air_time is not None
-  # Clamp to 1 s: beyond that the foot is falling, not swinging.
-  # Prevents unbounded critic input during jumps or falls.
-  return torch.clamp(current_air_time, max=1.0)
+  return torch.clamp(torch.nan_to_num(current_air_time, nan=0.0), max=1.0)
 
 
 def foot_contact(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
@@ -44,6 +43,7 @@ def foot_contact_forces(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tenso
   sensor_data = sensor.data
   assert sensor_data.force is not None
   forces_flat = sensor_data.force.flatten(start_dim=1)  # [B, N*3]
+  forces_flat = torch.nan_to_num(forces_flat, nan=0.0)
   return torch.sign(forces_flat) * torch.log1p(torch.abs(forces_flat))
 
 
@@ -61,6 +61,6 @@ def gait_phase_clock(
   The sin/cos encoding is bounded in [-1, 1] and smooth across phase wrapping.
   Typical walking cadence for H1_2 is ~1.5 Hz (one full stride per ~0.67 s).
   """
-  t = env.episode_length_buf.float() * env.step_dt  # elapsed time [num_envs]
-  phase = 2.0 * math.pi * cycle_freq_hz * t  # [num_envs]
-  return torch.stack([torch.sin(phase), torch.cos(phase)], dim=-1)  # [num_envs, 2]
+  t = env.episode_length_buf.float() * env.step_dt
+  phase = 2.0 * math.pi * cycle_freq_hz * t
+  return torch.stack([torch.sin(phase), torch.cos(phase)], dim=-1)

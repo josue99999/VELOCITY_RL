@@ -120,16 +120,7 @@ def arm_pose_continuous_teleop(
   )
   # Store stats for WandB: verify deltas/poses are random and changing.
   pose0 = new_joint_pos[0]
-  setattr(
-    env,
-    "_arm_teleop_log",
-    {
-      "delta_norm": delta.norm().item(),
-      "delta_mean_abs": delta.abs().mean().item(),
-      "pose_sample_mean": pose0.mean().item(),
-      "pose_sample_std": pose0.std().item() if pose0.numel() > 1 else 0.0,
-    },
-  )
+  env._arm_teleop_log = {"delta_norm": delta.norm().item(), "delta_mean_abs": delta.abs().mean().item(), "pose_sample_mean": pose0.mean().item(), "pose_sample_std": pose0.std().item() if pose0.numel() > 1 else 0.0}
 
 
 @requires_model_fields("body_mass")

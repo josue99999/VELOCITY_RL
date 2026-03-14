@@ -13,17 +13,19 @@ from mjlab.managers.event_manager import EventTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg, RayCastSensorCfg
 from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2 import mdp
-from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.mdp import UniformVelocityCommandCfg
-from mjlab.terrains.config import ROUGH_TERRAINS_H1_2_CFG
-from mjlab.managers.scene_entity_config import SceneEntityCfg
+from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.mdp import (
+  UniformVelocityCommandCfg,
+)
 from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.velocity_env_cfg import (
-  ARM_AND_HAND_JOINTS,
   CONTROLLED_JOINTS,
   make_velocity_env_cfg,
 )
+from mjlab.terrains.config import ROUGH_TERRAINS_H1_2_CFG
 
 
-def unitree_h1_2_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+def unitree_h1_2_rough_env_cfg(
+  play: bool = False,
+) -> ManagerBasedRlEnvCfg:
   """Create Unitree H1 v2 rough terrain velocity configuration."""
   cfg = make_velocity_env_cfg()
 
@@ -31,8 +33,7 @@ def unitree_h1_2_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.sim.contact_sensor_maxmatch = 500
   cfg.sim.nconmax = 45
 
-  # Coarser heightfield to avoid "height field collision overflow" (H1_2 has 14
-  # foot geoms; MuJoCo limits 50 contacts per geom-hfield pair).
+  # Coarser heightfield for H1_2's 14 foot geoms.
   if cfg.scene.terrain is not None and cfg.scene.terrain.terrain_generator is not None:
     cfg.scene.terrain.terrain_generator = ROUGH_TERRAINS_H1_2_CFG
 
@@ -126,12 +127,16 @@ def unitree_h1_2_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   cfg.rewards["upright"].params["asset_cfg"].body_names = ("torso_link",)
   cfg.rewards["body_ang_vel"].params["asset_cfg"].body_names = ("torso_link",)
 
-  for reward_name in ["foot_clearance", "foot_swing_height", "foot_slip"]:
+  for reward_name in [
+    "foot_clearance",
+    "foot_swing_height",
+    "foot_slip",
+  ]:
     cfg.rewards[reward_name].params["asset_cfg"].site_names = site_names
 
   cfg.rewards["body_ang_vel"].weight = -0.05
-  cfg.rewards["angular_momentum"].weight = -0.005
-  cfg.rewards["air_time"].weight = 1.5
+  cfg.rewards["angular_momentum"].weight = -0.02
+  cfg.rewards["air_time"].weight = 0.0
 
   cfg.rewards["self_collisions"] = RewardTermCfg(
     func=mdp.self_collision_cost,
@@ -139,24 +144,15 @@ def unitree_h1_2_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     params={"sensor_name": self_collision_cfg.name},
   )
 
-  # Apply play mode overrides.
-  # Play: only velocity commands, no perturbations (no pushes, no arm rand, no teleop).
   if play:
     cfg.episode_length_s = int(1e9)
-
     cfg.observations["actor"].enable_corruption = False
     cfg.curriculum = {}
-
-    cfg.events.pop("push_robot", None)
-    cfg.events.pop("randomize_arm_pose", None)
-    cfg.events.pop("randomize_arm_mass", None)
-    cfg.events.pop("arm_pose_continuous_teleop", None)
     cfg.events["randomize_terrain"] = EventTermCfg(
       func=envs_mdp.randomize_terrain,
       mode="reset",
       params={},
     )
-
     if cfg.scene.terrain is not None:
       if cfg.scene.terrain.terrain_generator is not None:
         cfg.scene.terrain.terrain_generator.curriculum = False
@@ -167,7 +163,9 @@ def unitree_h1_2_rough_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   return cfg
 
 
-def unitree_h1_2_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
+def unitree_h1_2_flat_env_cfg(
+  play: bool = False,
+) -> ManagerBasedRlEnvCfg:
   """Create Unitree H1 v2 flat terrain velocity configuration."""
   cfg = unitree_h1_2_rough_env_cfg(play=play)
 
@@ -191,9 +189,7 @@ def unitree_h1_2_flat_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
   if play:
     twist_cmd = cfg.commands["twist"]
     assert isinstance(twist_cmd, UniformVelocityCommandCfg)
-    # Only velocity commands (no perturbations).
-    twist_cmd.ranges.lin_vel_x = (-1.0, 1.0)
-    twist_cmd.ranges.lin_vel_y = (-1.0, 1.0)
-    twist_cmd.ranges.ang_vel_z = (-0.5, 0.5)
+    twist_cmd.ranges.lin_vel_x = (-1.5, 2.0)
+    twist_cmd.ranges.ang_vel_z = (-0.7, 0.7)
 
   return cfg

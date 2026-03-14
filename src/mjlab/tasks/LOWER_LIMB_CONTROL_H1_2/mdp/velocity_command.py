@@ -50,15 +50,13 @@ class UniformVelocityCommand(CommandTerm):
   def _update_metrics(self) -> None:
     max_command_time = self.cfg.resampling_time_range[1]
     max_command_step = max_command_time / self._env.step_dt
+    lin_vel_b = torch.nan_to_num(self.robot.data.root_link_lin_vel_b[:, :2], nan=0.0)
+    ang_vel_b = torch.nan_to_num(self.robot.data.root_link_ang_vel_b[:, 2], nan=0.0)
     self.metrics["error_vel_xy"] += (
-      torch.norm(
-        self.vel_command_b[:, :2] - self.robot.data.root_link_lin_vel_b[:, :2], dim=-1
-      )
-      / max_command_step
+      torch.norm(self.vel_command_b[:, :2] - lin_vel_b, dim=-1) / max_command_step
     )
     self.metrics["error_vel_yaw"] += (
-      torch.abs(self.vel_command_b[:, 2] - self.robot.data.root_link_ang_vel_b[:, 2])
-      / max_command_step
+      torch.abs(self.vel_command_b[:, 2] - ang_vel_b) / max_command_step
     )
 
   def _resample_command(self, env_ids: torch.Tensor) -> None:
@@ -75,12 +73,22 @@ class UniformVelocityCommand(CommandTerm):
     init_vel_mask = r.uniform_(0.0, 1.0) < self.cfg.init_velocity_prob
     init_vel_env_ids = env_ids[init_vel_mask]
     if len(init_vel_env_ids) > 0:
-      root_pos = self.robot.data.root_link_pos_w[init_vel_env_ids]
+      root_pos = torch.nan_to_num(
+        self.robot.data.root_link_pos_w[init_vel_env_ids], nan=0.0
+      )
       root_quat = self.robot.data.root_link_quat_w[init_vel_env_ids]
-      lin_vel_b = self.robot.data.root_link_lin_vel_b[init_vel_env_ids]
+      # Replace NaN quaternions with identity [1, 0, 0, 0].
+      quat_nan = torch.isnan(root_quat).any(dim=-1, keepdim=True)
+      identity_q = torch.tensor([1.0, 0.0, 0.0, 0.0], device=root_quat.device)
+      root_quat = torch.where(quat_nan, identity_q, root_quat)
+      lin_vel_b = torch.nan_to_num(
+        self.robot.data.root_link_lin_vel_b[init_vel_env_ids], nan=0.0
+      )
       lin_vel_b[:, :2] = self.vel_command_b[init_vel_env_ids, :2]
       root_lin_vel_w = quat_apply(root_quat, lin_vel_b)
-      root_ang_vel_b = self.robot.data.root_link_ang_vel_b[init_vel_env_ids]
+      root_ang_vel_b = torch.nan_to_num(
+        self.robot.data.root_link_ang_vel_b[init_vel_env_ids], nan=0.0
+      )
       root_ang_vel_b[:, 2] = self.vel_command_b[init_vel_env_ids, 2]
       root_state = torch.cat(
         [root_pos, root_quat, root_lin_vel_w, root_ang_vel_b], dim=-1
@@ -89,7 +97,8 @@ class UniformVelocityCommand(CommandTerm):
 
   def _update_command(self) -> None:
     if self.cfg.heading_command:
-      self.heading_error = wrap_to_pi(self.heading_target - self.robot.data.heading_w)
+      heading_w = torch.nan_to_num(self.robot.data.heading_w, nan=0.0)
+      self.heading_error = wrap_to_pi(self.heading_target - heading_w)
       env_ids = self.is_heading_env.nonzero(as_tuple=False).flatten()
       self.vel_command_b[env_ids, 2] = torch.clip(
         self.cfg.heading_control_stiffness * self.heading_error[env_ids],

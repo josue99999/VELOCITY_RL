@@ -8,14 +8,17 @@ from mjlab.rl import (
 
 
 def unitree_h1_2_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
-  """Create RL runner configuration for Unitree H1 v2 lower limb velocity task."""
+  """Create RL runner config for Unitree H1 v2 lower limb velocity.
+
+  Hyperparameters match the proven G1 velocity configuration.
+  """
   return RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
       hidden_dims=(512, 256, 128),
       activation="elu",
       obs_normalization=True,
       stochastic=True,
-      init_noise_std=1.5,
+      init_noise_std=1.0,
     ),
     critic=RslRlModelCfg(
       hidden_dims=(512, 256, 128),
@@ -25,13 +28,13 @@ def unitree_h1_2_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
       init_noise_std=1.0,
     ),
     algorithm=RslRlPpoAlgorithmCfg(
-      value_loss_coef=0.5,
+      value_loss_coef=1.0,
       use_clipped_value_loss=True,
       clip_param=0.2,
-      entropy_coef=0.02,
-      num_learning_epochs=8,
+      entropy_coef=0.01,
+      num_learning_epochs=5,
       num_mini_batches=4,
-      learning_rate=3.0e-4,
+      learning_rate=1.0e-3,
       schedule="adaptive",
       gamma=0.99,
       lam=0.95,
