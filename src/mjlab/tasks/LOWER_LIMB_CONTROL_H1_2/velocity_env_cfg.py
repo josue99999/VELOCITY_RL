@@ -86,6 +86,10 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       func=mdp.generated_commands,
       params={"command_name": "twist"},
     ),
+    "gait_phase": ObservationTermCfg(
+      func=mdp.gait_phase_clock,
+      params={"cycle_freq_hz": 1.5},
+    ),
     "height_scan": ObservationTermCfg(
       func=envs_mdp.height_scan,
       params={"sensor_name": "terrain_scan"},
@@ -158,7 +162,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       rel_standing_envs=0.1,
       rel_heading_envs=0.3,
       heading_command=True,
-      heading_control_stiffness=0.5,
+      heading_control_stiffness=0.8,
       debug_vis=True,
       ranges=UniformVelocityCommandCfg.Ranges(
         lin_vel_x=(-1.0, 1.0),
@@ -240,7 +244,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
   rewards = {
     "track_linear_velocity": RewardTermCfg(
       func=mdp.track_linear_velocity,
-      weight=2.0,
+      weight=4.0,
       params={
         "command_name": "twist",
         "std": math.sqrt(0.25),
@@ -248,7 +252,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "track_angular_velocity": RewardTermCfg(
       func=mdp.track_angular_velocity,
-      weight=2.0,
+      weight=4.0,
       params={
         "command_name": "twist",
         "std": math.sqrt(0.5),
@@ -285,57 +289,67 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       weight=0.0,  # Override per-robot.
       params={"sensor_name": "robot/root_angmom"},
     ),
-    "dof_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-1.0),
-    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.1),
+    "dof_pos_limits": RewardTermCfg(func=mdp.joint_pos_limits, weight=-0.5),
+    "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.005),
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=0.0,  # Override per-robot.
+      weight=4.0,
       params={
         "sensor_name": "feet_ground_contact",
         "threshold_min": 0.05,
         "threshold_max": 0.5,
         "command_name": "twist",
-        "command_threshold": 0.5,
+        "command_threshold": 0.1,
+      },
+    ),
+    "feet_lift": RewardTermCfg(
+      func=mdp.feet_lift,
+      weight=0.5,
+      params={
+        "sensor_name": "feet_ground_contact",
+        "command_name": "twist",
+        "command_threshold": 0.05,
+        "asset_cfg": SceneEntityCfg("robot", site_names=()),
       },
     ),
     "foot_clearance": RewardTermCfg(
       func=mdp.feet_clearance,
-      weight=-2.0,
+      weight=-0.05,
       params={
-        "target_height": 0.1,
+        "target_height": 0.08,
         "command_name": "twist",
-        "command_threshold": 0.05,
+        "command_threshold": 0.1,
         "asset_cfg": SceneEntityCfg("robot", site_names=()),
       },
     ),
     "foot_swing_height": RewardTermCfg(
       func=mdp.feet_swing_height,
-      weight=-0.25,
+      weight=-0.1,
       params={
         "sensor_name": "feet_ground_contact",
         "target_height": 0.1,
         "command_name": "twist",
-        "command_threshold": 0.05,
+        "command_threshold": 0.1,
         "asset_cfg": SceneEntityCfg("robot", site_names=()),
       },
     ),
     "foot_slip": RewardTermCfg(
       func=mdp.feet_slip,
-      weight=-0.1,
+      weight=-0.05,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
-        "command_threshold": 0.05,
+        "command_threshold": 0.1,
         "asset_cfg": SceneEntityCfg("robot", site_names=()),
       },
     ),
     "soft_landing": RewardTermCfg(
       func=mdp.soft_landing,
-      weight=-1e-5,
+      weight=-1e-4,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
-        "command_threshold": 0.05,
+        "command_threshold": 0.1,
       },
     ),
   }
@@ -353,7 +367,8 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
   }
 
   ##
-  # Curriculum (simple velocity staging, spread over 60k iters)
+  # Curriculum (velocity staging by iterations; step = iters * steps_per_iter)
+  # With 1024 envs and 24 steps/iter, 15_000 * 24 * 1024 ≈ 15k iters to stage 2.
   ##
 
   curriculum = {
@@ -372,12 +387,12 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
             "ang_vel_z": (-0.5, 0.5),
           },
           {
-            "step": 15_000 * 24,
+            "step": 15_000 * 24 * 1024,
             "lin_vel_x": (-1.5, 2.0),
             "ang_vel_z": (-0.7, 0.7),
           },
           {
-            "step": 30_000 * 24,
+            "step": 30_000 * 24 * 1024,
             "lin_vel_x": (-2.0, 3.0),
           },
         ],
@@ -400,7 +415,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     viz=RayCastSensorCfg.VizCfg(show_normals=True),
   )
 
-  return ManagerBasedRlEnvCfg(
+  return ManagerBasedRlEnvCfg(  # type: ignore[call-arg]
     scene=SceneCfg(
       terrain=TerrainImporterCfg(
         terrain_type="generator",
@@ -436,5 +451,5 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
       ),
     ),
     decimation=4,
-    episode_length_s=20.0,
+    episode_length_s=20.0,  # type: ignore[call-arg]
   )

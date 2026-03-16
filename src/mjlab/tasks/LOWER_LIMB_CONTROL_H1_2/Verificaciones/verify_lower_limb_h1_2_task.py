@@ -267,6 +267,7 @@ try:
     "dof_pos_limits",
     "action_rate_l2",
     "air_time",
+    "feet_lift",
     "foot_clearance",
     "foot_swing_height",
     "foot_slip",

@@ -164,6 +164,37 @@ def feet_air_time(
   return reward
 
 
+def feet_lift(
+  env: ManagerBasedRlEnv,
+  sensor_name: str,
+  command_name: str | None = None,
+  command_threshold: float = 0.05,
+  asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+  """Reward for lifting feet: height of each foot when not in contact.
+
+  Simple positive reward so the policy has a direct incentive to lift feet
+  during swing, without relying on air_time thresholds that are hard to reach
+  when the robot has not yet learned to walk.
+  """
+  asset: Entity = env.scene[asset_cfg.name]
+  contact_sensor: ContactSensor = env.scene[sensor_name]
+  foot_z = _sanitize(asset.data.site_pos_w[:, asset_cfg.site_ids, 2])
+  assert contact_sensor.data.found is not None
+  in_contact = contact_sensor.data.found > 0
+  in_air = (~in_contact).float()
+  reward = torch.sum(foot_z * in_air, dim=1)
+  if command_name is not None:
+    command = env.command_manager.get_command(command_name)
+    if command is not None:
+      linear_norm = torch.norm(command[:, :2], dim=1)
+      angular_norm = torch.abs(command[:, 2])
+      total_command = linear_norm + angular_norm
+      scale = (total_command > command_threshold).float()
+      reward *= scale
+  return reward
+
+
 def feet_clearance(
   env: ManagerBasedRlEnv,
   target_height: float,
