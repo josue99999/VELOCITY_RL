@@ -293,7 +293,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     "action_rate_l2": RewardTermCfg(func=mdp.action_rate_l2, weight=-0.005),
     "air_time": RewardTermCfg(
       func=mdp.feet_air_time,
-      weight=4.0,
+      weight=1.0,
       params={
         "sensor_name": "feet_ground_contact",
         "threshold_min": 0.05,
@@ -304,7 +304,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "feet_lift": RewardTermCfg(
       func=mdp.feet_lift,
-      weight=0.5,
+      weight=0.2,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",
@@ -314,7 +314,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "foot_clearance": RewardTermCfg(
       func=mdp.feet_clearance,
-      weight=-0.05,
+      weight=-0.08,
       params={
         "target_height": 0.08,
         "command_name": "twist",
@@ -345,7 +345,7 @@ def make_velocity_env_cfg() -> ManagerBasedRlEnvCfg:
     ),
     "soft_landing": RewardTermCfg(
       func=mdp.soft_landing,
-      weight=-1e-4,
+      weight=-2e-4,
       params={
         "sensor_name": "feet_ground_contact",
         "command_name": "twist",

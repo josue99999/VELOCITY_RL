@@ -31,7 +31,7 @@ def unitree_h1_2_rough_env_cfg(
 
   cfg.sim.mujoco.ccd_iterations = 500
   cfg.sim.contact_sensor_maxmatch = 500
-  cfg.sim.nconmax = 45
+  cfg.sim.nconmax = 200
 
   # Coarser heightfield for H1_2's 14 foot geoms.
   if cfg.scene.terrain is not None and cfg.scene.terrain.terrain_generator is not None:
@@ -137,7 +137,7 @@ def unitree_h1_2_rough_env_cfg(
 
   cfg.rewards["body_ang_vel"].weight = -0.02
   cfg.rewards["angular_momentum"].weight = -0.005
-  cfg.rewards["air_time"].weight = 4.0
+  cfg.rewards["air_time"].weight = 1.0
 
   cfg.rewards["self_collisions"] = RewardTermCfg(
     func=mdp.self_collision_cost,
