@@ -29,6 +29,43 @@ class RewardWeightStage(TypedDict):
   weight: float
 
 
+class ArmTeleopStage(TypedDict, total=False):
+  step: int
+  max_delta: float
+  main_arm_scale: float
+
+
+def arm_teleop_vel_stages(
+  env: ManagerBasedRlEnv,
+  env_ids: torch.Tensor,
+  event_name: str,
+  stages: list[ArmTeleopStage],
+) -> dict[str, torch.Tensor]:
+  """Step-based curriculum for arm continuous teleop intensity.
+
+  Gradually increases ``max_delta`` and ``main_arm_scale`` of the
+  ``arm_pose_continuous_teleop`` event as training progresses.
+  """
+  del env_ids  # Unused.
+  max_delta = 0.0
+  main_arm_scale = 1.0
+  for stage in stages:
+    if env.common_step_counter > stage["step"]:
+      max_delta = stage.get("max_delta", max_delta)
+      main_arm_scale = stage.get("main_arm_scale", main_arm_scale)
+  try:
+    event_cfg = env.event_manager.get_term_cfg(event_name)
+    event_cfg.params["max_delta"] = max_delta
+    event_cfg.params["main_arm_scale"] = main_arm_scale
+  except ValueError:
+    pass
+  return {
+    "arm_teleop_max_delta": torch.tensor(max_delta),
+    "arm_teleop_main_arm_scale": torch.tensor(main_arm_scale),
+    "arm_teleop_active": torch.tensor(1.0 if max_delta > 0 else 0.0),
+  }
+
+
 def terrain_levels_vel(
   env: ManagerBasedRlEnv,
   env_ids: torch.Tensor,

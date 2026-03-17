@@ -9,8 +9,10 @@ from mjlab.asset_zoo.robots.robot_hands.h1_2_with_hands_constants import (
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs import mdp as envs_mdp
 from mjlab.envs.mdp.actions import JointPositionActionCfg
+from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.event_manager import EventTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
+from mjlab.managers.scene_entity_config import SceneEntityCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg, RayCastSensorCfg
 from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2 import mdp
 from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.mdp import (
@@ -21,6 +23,20 @@ from mjlab.tasks.LOWER_LIMB_CONTROL_H1_2.velocity_env_cfg import (
   make_velocity_env_cfg,
 )
 from mjlab.terrains.config import ROUGH_TERRAINS_H1_2_CFG
+
+# Arm joints (not controlled, but moved as perturbation via teleop).
+ARM_JOINTS = (
+  ".*_shoulder_pitch_joint",
+  ".*_shoulder_roll_joint",
+  ".*_shoulder_yaw_joint",
+  ".*_elbow_joint",
+  ".*_wrist_roll_joint",
+  ".*_wrist_pitch_joint",
+  ".*_wrist_yaw_joint",
+)
+
+# Step multiplier: 1 iteration = num_steps_per_env * num_envs env steps.
+_STEP_MUL = 24 * 1024  # 24 steps/iter * 1024 envs
 
 
 def unitree_h1_2_rough_env_cfg(
@@ -145,10 +161,66 @@ def unitree_h1_2_rough_env_cfg(
     params={"sensor_name": self_collision_cfg.name},
   )
 
+  # Arm continuous teleop: starts disabled (max_delta=0), curriculum ramps it.
+  cfg.events["arm_pose_continuous_teleop"] = EventTermCfg(
+    func=mdp.arm_pose_continuous_teleop,
+    mode="interval",
+    interval_range_s=(0.02, 0.02),
+    params={
+      "asset_cfg": SceneEntityCfg("robot", joint_names=ARM_JOINTS),
+      "max_delta": 0.0,  # Disabled initially; curriculum overrides.
+      "main_arm_scale": 1.0,
+    },
+  )
+
+  # Curriculum: gradually increase arm teleop intensity.
+  # 0-10k iters: no arm movement (policy learns to walk first)
+  # 10k-20k: very slow (max_delta=0.003)
+  # 20k-30k: slow (max_delta=0.006)
+  # 30k-40k: medium (max_delta=0.010)
+  # 40k-50k: faster (max_delta=0.015)
+  # 50k-60k: full speed (max_delta=0.020)
+  cfg.curriculum["arm_teleop"] = CurriculumTermCfg(
+    func=mdp.arm_teleop_vel_stages,
+    params={
+      "event_name": "arm_pose_continuous_teleop",
+      "stages": [
+        {
+          "step": 10_000 * _STEP_MUL,
+          "max_delta": 0.003,
+          "main_arm_scale": 1.5,
+        },
+        {
+          "step": 20_000 * _STEP_MUL,
+          "max_delta": 0.006,
+          "main_arm_scale": 2.0,
+        },
+        {
+          "step": 30_000 * _STEP_MUL,
+          "max_delta": 0.010,
+          "main_arm_scale": 2.5,
+        },
+        {
+          "step": 40_000 * _STEP_MUL,
+          "max_delta": 0.015,
+          "main_arm_scale": 3.0,
+        },
+        {
+          "step": 50_000 * _STEP_MUL,
+          "max_delta": 0.020,
+          "main_arm_scale": 3.5,
+        },
+      ],
+    },
+  )
+
   if play:
     cfg.episode_length_s = int(1e9)
     cfg.observations["actor"].enable_corruption = False
     cfg.curriculum = {}
+    # Enable arm teleop at full speed for evaluation.
+    cfg.events["arm_pose_continuous_teleop"].params["max_delta"] = 0.020
+    cfg.events["arm_pose_continuous_teleop"].params["main_arm_scale"] = 3.5
     cfg.events["randomize_terrain"] = EventTermCfg(
       func=envs_mdp.randomize_terrain,
       mode="reset",
