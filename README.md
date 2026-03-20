@@ -1,7 +1,9 @@
-# H1_2_Curriculum.gif
+## Ejemplos de locomoción
 
-![H1_2_Curriculum.gif](https://raw.githubusercontent.com/josue99999/VELOCITY_RL/main/path/to/H1_2_Curriculum.gif)
+1. G1 en terreno plano:
 
-# G1.gif
+![G1](G1.gif)
 
-![G1.gif](https://raw.githubusercontent.com/josue99999/VELOCITY_RL/main/path/to/G1.gif)
+2. H1_2 en terreno irregular (escaleras, rough terrain):
+
+![H1_2](H1_2_Curriculum.gif)
