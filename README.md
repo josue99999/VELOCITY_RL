@@ -1,6 +1,7 @@
-# VELOCITY_RL – Balance Manipulation G1 Hands
+# H1_2_Curriculum.gif
 
-Este directorio contiene tu tarea personalizada de **balance / seguimiento de velocidad** para el humanoide **Unitree G1 con manos** (`G1-Hands`) usando MuJoCo-Warp y RSL-RL.
+![H1_2_Curriculum.gif](https://raw.githubusercontent.com/josue99999/VELOCITY_RL/main/path/to/H1_2_Curriculum.gif)
 
+# G1.gif
 
-
+![G1.gif](https://raw.githubusercontent.com/josue99999/VELOCITY_RL/main/path/to/G1.gif)
