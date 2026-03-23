@@ -1,8 +1,8 @@
-"""Unitree G1 flat tracking environment configurations."""
+"""Unitree H1 v2 flat tracking environment configurations."""
 
-from mjlab.asset_zoo.robots import (
-  G1_ACTION_SCALE,
-  get_g1_robot_cfg,
+from mjlab.asset_zoo.robots.robot_hands.h1_2_with_hands_constants import (
+  H1_2_ACTION_SCALE,
+  get_h1_2_robot_cfg,
 )
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
@@ -18,9 +18,6 @@ from mjlab.tasks.tracking.tracking_env_cfg import (
   make_tracking_env_cfg,
 )
 
-# RSI noise is introduced progressively. Steps are in env steps
-# (common_step_counter). With num_steps_per_env=24, one PPO iteration
-# equals 24 env steps, so step 48_000 ~ iteration 2000.
 _POSE_RANGE_FULL = {
   "x": (-0.05, 0.05),
   "y": (-0.05, 0.05),
@@ -33,14 +30,14 @@ _POSE_RANGE_HALF = {k: (v[0] * 0.5, v[1] * 0.5) for k, v in _POSE_RANGE_FULL.ite
 _VEL_RANGE_HALF = {k: (v[0] * 0.5, v[1] * 0.5) for k, v in VELOCITY_RANGE.items()}
 
 
-def unitree_g1_flat_tracking_env_cfg(
+def unitree_h1_2_flat_tracking_env_cfg(
   has_state_estimation: bool = True,
   play: bool = False,
 ) -> ManagerBasedRlEnvCfg:
-  """Create Unitree G1 flat terrain tracking configuration."""
+  """Create Unitree H1 v2 flat terrain tracking configuration."""
   cfg = make_tracking_env_cfg()
 
-  cfg.scene.entities = {"robot": get_g1_robot_cfg()}
+  cfg.scene.entities = {"robot": get_h1_2_robot_cfg()}
 
   self_collision_cfg = ContactSensorCfg(
     name="self_collision",
@@ -54,7 +51,7 @@ def unitree_g1_flat_tracking_env_cfg(
 
   joint_pos_action = cfg.actions["joint_pos"]
   assert isinstance(joint_pos_action, JointPositionActionCfg)
-  joint_pos_action.scale = G1_ACTION_SCALE
+  joint_pos_action.scale = H1_2_ACTION_SCALE
 
   motion_cmd = cfg.commands["motion"]
   assert isinstance(motion_cmd, MotionCommandCfg)
@@ -95,9 +92,6 @@ def unitree_g1_flat_tracking_env_cfg(
 
   cfg.viewer.body_name = "torso_link"
 
-  # Reduce penalty weights so tracking rewards dominate early training.
-  # The policy needs to output non-zero actions to track the reference;
-  # harsh penalties for action rate / self-collision discourage this.
   cfg.rewards["action_rate_l2"].weight = -0.01
   cfg.rewards["self_collisions"].weight = -1.0
   cfg.rewards["joint_vel"] = RewardTermCfg(
@@ -106,8 +100,6 @@ def unitree_g1_flat_tracking_env_cfg(
     params={"asset_cfg": SceneEntityCfg("robot", joint_names=(".*",))},
   )
 
-  # Curriculum: progressively increase RSI noise, tighten terminations,
-  # and restore penalty weights.
   cfg.curriculum = {
     "rsi_noise": CurriculumTermCfg(
       func=mdp.motion_rsi_curriculum,

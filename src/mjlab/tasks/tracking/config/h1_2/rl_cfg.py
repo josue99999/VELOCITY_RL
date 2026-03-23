@@ -1,4 +1,4 @@
-"""RL configuration for Unitree G1 tracking task."""
+"""RL configuration for Unitree H1 v2 motion tracking task."""
 
 from mjlab.rl import (
   RslRlModelCfg,
@@ -7,8 +7,8 @@ from mjlab.rl import (
 )
 
 
-def unitree_g1_tracking_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
-  """Create RL runner configuration for Unitree G1 tracking task."""
+def unitree_h1_2_tracking_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
+  """Create PPO runner config for Unitree H1 v2 motion tracking."""
   return RslRlOnPolicyRunnerCfg(
     actor=RslRlModelCfg(
       hidden_dims=(512, 256, 128),
@@ -31,14 +31,14 @@ def unitree_g1_tracking_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
       entropy_coef=0.005,
       num_learning_epochs=5,
       num_mini_batches=4,
-      learning_rate=1.0e-3,
+      learning_rate=1e-3,
       schedule="adaptive",
       gamma=0.99,
       lam=0.95,
-      desired_kl=0.01,
-      max_grad_norm=1.0,
+      desired_kl=0.008,
+      max_grad_norm=0.5,
     ),
-    experiment_name="g1_tracking",
+    experiment_name="h1_2_tracking",
     save_interval=500,
     num_steps_per_env=24,
     max_iterations=60_000,
