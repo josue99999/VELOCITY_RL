@@ -1,6 +1,6 @@
 # Motion Tracking Task
 
-This branch (`motion_tracking`) contains a motion tracking task that teaches humanoid robots (G1 and H1_2) to replicate human dance movements captured by [video2robot](https://github.com/google-deepmind/video2robot).
+This branch (`motion_tracking`) contains a motion tracking task that teaches humanoid robots (G1 and H1_2) to replicate human dance movements captured by [video2robot_h1_2](https://github.com/josue99999/video2robot_h1_2).
 
 ## Overview
 
