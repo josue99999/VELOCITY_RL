@@ -123,11 +123,13 @@ View real-time metrics on Weights & Biases:
 
 ---
 
-## GIFs
+## Results
 
-See motion tracking results:
-- `src/mjlab/output/H1_2_MOTION_TRACKING/giff/G1_HUAYNO.gif`
-- `src/mjlab/output/H1_2_MOTION_TRACKING/giff/G1_CAPORAL.gif`
+### G1 Huayno Dance
+![G1 Huayno](src/mjlab/output/H1_2_MOTION_TRACKING/giff/G1_HUAYNO.gif)
+
+### G1 Caporal Dance
+![G1 Caporal](src/mjlab/output/H1_2_MOTION_TRACKING/giff/G1_CAPORAL.gif)
 
 ---
 
