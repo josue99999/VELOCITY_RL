@@ -19,7 +19,7 @@ This prevents early-training collapse where untrained policies die in ~3 steps.
 Two dance datasets are supported:
 
 - **Huayno** (Peruvian dance): `abadjosue25-abba/csv_to_npz/huayno-g1:v0`, `huayno-h1-2:v0`
-- **Caporal** (Mexican dance): `abadjosue25-abba/csv_to_npz/caporal-g1:v0`, `caporal-h1-2:v0`
+- **Caporal** (Peruvian dance): `abadjosue25-abba/csv_to_npz/caporal-g1:v0`, `caporal-h1-2:v0`
 
 ---
 
