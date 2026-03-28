@@ -1,222 +1,155 @@
-![Project banner](docs/source/_static/mjlab-banner.jpg)
+# Motion Tracking Task
 
-# mjlab
+This branch (`motion_tracking`) contains a motion tracking task that teaches humanoid robots (G1 and H1_2) to replicate human dance movements captured by [video2robot](https://github.com/google-deepmind/video2robot).
 
-[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/mujocolab/mjlab/ci.yml?branch=main)](https://github.com/mujocolab/mjlab/actions/workflows/ci.yml?query=branch%3Amain)
-[![Documentation](https://github.com/mujocolab/mjlab/actions/workflows/docs.yml/badge.svg)](https://mujocolab.github.io/mjlab/)
-[![License](https://img.shields.io/github/license/mujocolab/mjlab)](https://github.com/mujocolab/mjlab/blob/main/LICENSE)
-[![Nightly Benchmarks](https://img.shields.io/badge/Nightly-Benchmarks-blue)](https://mujocolab.github.io/mjlab/nightly/)
+## Overview
 
-mjlab combines [Isaac Lab](https://github.com/isaac-sim/IsaacLab)'s manager-based API with [MuJoCo Warp](https://github.com/google-deepmind/mujoco_warp), a GPU-accelerated version of [MuJoCo](https://github.com/google-deepmind/mujoco).
-The framework provides composable building blocks for environment design,
-with minimal dependencies and direct access to native MuJoCo data structures.
+The motion tracking task uses **PPO (Proximal Policy Optimization)** with a **progressive curriculum** that gradually increases difficulty during training:
 
-## Getting Started
+1. **Phase 1 (0-2k iterations)**: Zero noise, loose constraints → policy learns basics
+2. **Phase 2 (2k-5k iterations)**: 50% noise, medium constraints → policy generalizes
+3. **Phase 3 (5k-60k iterations)**: Full noise, tight constraints → policy converges
 
-mjlab requires an NVIDIA GPU for training. macOS is supported for evaluation only.
+This prevents early-training collapse where untrained policies die in ~3 steps.
 
-**Try it now:**
+---
 
-Run the demo (no installation needed):
+## Datasets
+
+Two dance datasets are supported:
+
+- **Huayno** (Peruvian dance): `abadjosue25-abba/csv_to_npz/huayno-g1:v0`, `huayno-h1-2:v0`
+- **Caporal** (Mexican dance): `abadjosue25-abba/csv_to_npz/caporal-g1:v0`, `caporal-h1-2:v0`
+
+---
+
+## Training
+
+### G1 (4096 envs, ~8 hours to 60k iterations)
+
+**Huayno:**
+```bash
+WANDB_CACHE_DIR=/tmp/wandb_cache uv run train Mjlab-Tracking-Flat-Unitree-G1 \
+  --env.scene.num-envs 4096 \
+  --registry-name abadjosue25-abba/csv_to_npz/huayno-g1:v0
+```
+
+**Caporal:**
+```bash
+WANDB_CACHE_DIR=/tmp/wandb_cache uv run train Mjlab-Tracking-Flat-Unitree-G1 \
+  --env.scene.num-envs 4096 \
+  --registry-name abadjosue25-abba/csv_to_npz/caporal-g1:v0
+```
+
+### H1_2 (2048 envs, ~12 hours to 60k iterations)
+
+**Huayno:**
+```bash
+WANDB_CACHE_DIR=/tmp/wandb_cache uv run train Mjlab-Tracking-Flat-H1_2 \
+  --env.scene.num-envs 2048 \
+  --registry-name abadjosue25-abba/csv_to_npz/huayno-h1-2:v0
+```
+
+**Caporal:**
+```bash
+WANDB_CACHE_DIR=/tmp/wandb_cache uv run train Mjlab-Tracking-Flat-H1_2 \
+  --env.scene.num-envs 2048 \
+  --registry-name abadjosue25-abba/csv_to_npz/caporal-h1-2:v0
+```
+
+### With tmux (background):
 
 ```bash
-uvx --from mjlab --refresh \
-  --with "mujoco-warp @ git+https://github.com/google-deepmind/mujoco_warp@7c20a44bfed722e6415235792a1b247ea6b6a6d3" \
-  demo
+tmux new-session -s training -d 'cd /path/to/VELOCITY_RL && \
+  export UV_CACHE_DIR=/tmp/uv_cache && \
+  export WANDB_CACHE_DIR=/tmp/wandb_cache && \
+  uv run train Mjlab-Tracking-Flat-Unitree-G1 --env.scene.num-envs 4096 --registry-name abadjosue25-abba/csv_to_npz/caporal-g1:v0'
+
+# Attach to see logs
+tmux attach -t training
+# Detach: Ctrl+b d
 ```
 
-Or try in [Google Colab](https://colab.research.google.com/github/mujocolab/mjlab/blob/main/notebooks/demo.ipynb) (no local setup required).
+---
 
-**Install from source:**
+## Evaluation
+
+Test a trained checkpoint with visualization:
+
+### G1 Caporal (59,999 iterations, checkpoint included)
 
 ```bash
-git clone https://github.com/mujocolab/mjlab.git && cd mjlab
-uv run demo
+uv run play Mjlab-Tracking-Flat-Unitree-G1 \
+  --checkpoint-file src/mjlab/output/G1_MOTION_TRACKING/model_caporal_59999.pt \
+  --motion-file artifacts/caporal-g1:v0/motion.npz
 ```
 
-For alternative installation methods (PyPI, Docker), see the [Installation Guide](https://mujocolab.github.io/mjlab/source/installation.html).
-
-## Training Examples
-
-### 1. Velocity Tracking
-
-Train a Unitree G1 humanoid to follow velocity commands on flat terrain:
+### Record Video (500 frames)
 
 ```bash
-uv run train Mjlab-Velocity-Flat-Unitree-G1 --env.scene.num-envs 4096
+uv run play Mjlab-Tracking-Flat-Unitree-G1 \
+  --checkpoint-file src/mjlab/output/G1_MOTION_TRACKING/model_caporal_59999.pt \
+  --motion-file artifacts/caporal-g1:v0/motion.npz \
+  --video True --video-length 500 --num-envs 1
 ```
 
-**Multi-GPU Training:** Scale to multiple GPUs using `--gpu-ids`:
+Video saved to: `src/mjlab/output/G1_MOTION_TRACKING/videos/play/rl-video-step-0.mp4`
 
-```bash
-uv run train Mjlab-Velocity-Flat-Unitree-G1 \
-  --gpu-ids 0 1 \
-  --env.scene.num-envs 4096
-```
+---
 
-See the [Distributed Training guide](https://mujocolab.github.io/mjlab/source/distributed_training.html) for details.
+## Curriculum Details
 
-Evaluate a policy while training (fetches latest checkpoint from Weights & Biases):
+The curriculum modifies 6 terms during training:
 
-```bash
-uv run play Mjlab-Velocity-Flat-Unitree-G1 --wandb-run-path your-org/mjlab/run-id
-```
+| Term | Phase 1 | Phase 2 | Phase 3 |
+|------|---------|---------|---------|
+| RSI Noise (pose) | 0% | 50% | 100% |
+| EE Body Position Threshold | 0.5m | 0.35m | 0.25m |
+| Anchor Orientation Threshold | 1.5rad | 1.2rad | 0.8rad |
+| Action Rate Penalty | -0.01 | -0.05 | -0.1 |
+| Self-Collision Penalty | -1.0 | -5.0 | -10.0 |
+| Joint Velocity Penalty | -0.001 | -0.001 | -0.001 |
 
-### 2. Motion Imitation
+**RSI = Reference State Initialization**: initial pose/velocity perturbation when resetting.
 
-Train a humanoid to mimic reference motions. mjlab uses WandB to manage motion datasets.
-See the [motion preprocessing documentation](https://github.com/HybridRobotics/whole_body_tracking/blob/main/README.md#motion-preprocessing--registry-setup) for setup instructions.
+---
 
-```bash
-uv run train Mjlab-Tracking-Flat-Unitree-G1 --registry-name your-org/motions/motion-name --env.scene.num-envs 4096
-uv run play Mjlab-Tracking-Flat-Unitree-G1 --wandb-run-path your-org/mjlab/run-id
-```
+## Monitoring Training
 
-### 3. Sanity-check with Dummy Agents
+View real-time metrics on Weights & Biases:
+- **Episode Length**: Should grow from ~4 to ~150+ steps
+- **Reward**: Should increase from ~0 to ~+4
+- **Entropy**: Should decrease from ~1.0 to ~0.1-0.3 (policy becomes confident)
 
-Use built-in agents to sanity check your MDP before training:
+---
 
-```bash
-uv run play Mjlab-Your-Task-Id --agent zero  # Sends zero actions
-uv run play Mjlab-Your-Task-Id --agent random  # Sends uniform random actions
-```
+## GIFs
 
-When running motion-tracking tasks, add `--registry-name your-org/motions/motion-name` to the command.
+See motion tracking results:
+- `src/mjlab/output/H1_2_MOTION_TRACKING/giff/G1_HUAYNO.gif`
+- `src/mjlab/output/H1_2_MOTION_TRACKING/giff/G1_CAPORAL.gif`
 
+---
 
-## Community Projects
+## Key Files
 
-mjlab is used for research and robotics applications around the world. Examples:
+- **Curriculum logic**: `src/mjlab/tasks/tracking/mdp/curriculums.py`
+- **G1 config**: `src/mjlab/tasks/tracking/config/g1/env_cfgs.py`, `rl_cfg.py`
+- **H1_2 config**: `src/mjlab/tasks/tracking/config/h1_2/env_cfgs.py`, `rl_cfg.py`
+- **Motion commands**: `src/mjlab/tasks/tracking/mdp/commands.py`
 
-<table>
-  <tr>
-    <td>
-      <a href="https://github.com/menloresearch/asimov-mjlab">
-        menloresearch/asimov-mjlab
-        <br /><img
-          alt="GitHub stars"
-          src="https://img.shields.io/github/stars/menloresearch/asimov-mjlab?style=social"
-        />
-      </a>
-    </td>
-    <td>Locomotion fork for the Asimov bipedal robot.</td>
-  </tr>
-  <tr>
-    <td>
-      <a href="http://husky-humanoid.github.io/">
-        HUSKY
-      </a>
-      <br />
-      <a href="https://github.com/mujocolab/mjlab/discussions/572">#572</a>
-      ·
-      <a href="https://arxiv.org/abs/2602.03205">Paper</a>
-    </td>
-    <td>
-      Humanoid skateboarding with dynamic balance control.
-    </td>
-  </tr>
-  <tr>
-    <td>
-      <a href="https://github.com/Nagi-ovo/mjlab-homierl">
-        Nagi-ovo/mjlab-homierl
-        <br /><img
-          alt="GitHub stars"
-          src="https://img.shields.io/github/stars/Nagi-ovo/mjlab-homierl?style=social"
-        />
-      </a>
-    </td>
-    <td>Multi-task H1 locomotion (walk/squat/stand) with upper-body disturbance robustness.</td>
-  </tr>
-  <tr>
-    <td>
-      <a href="https://github.com/MyoHub/mjlab_myosuite">
-        MyoHub/mjlab_myosuite
-        <br /><img
-          alt="GitHub stars"
-          src="https://img.shields.io/github/stars/MyoHub/mjlab_myosuite?style=social"
-        />
-      </a>
-    </td>
-    <td>Musculoskeletal simulation integration with MyoSuite.</td>
-  </tr>
-  <tr>
-    <td>
-      <a href="https://github.com/MarcDcls/mjlab_upkie">
-        MarcDcls/mjlab_upkie
-        <br /><img
-          alt="GitHub stars"
-          src="https://img.shields.io/github/stars/MarcDcls/mjlab_upkie?style=social"
-        />
-      </a>
-    </td>
-    <td>Velocity control for the Upkie wheeled biped.</td>
-  </tr>
-  <tr>
-    <td>
-      <a href="https://github.com/unitreerobotics/unitree_rl_mjlab">
-        unitreerobotics/unitree_rl_mjlab
-        <br /><img
-          alt="GitHub stars"
-          src="https://img.shields.io/github/stars/unitreerobotics/unitree_rl_mjlab?style=social"
-        />
-      </a>
-    </td>
-    <td>Official Unitree RL environments for Go2, G1, and H1_2.</td>
-  </tr>
-</table>
+---
 
-Want to share your project? Post in [Show and Tell](https://github.com/mujocolab/mjlab/discussions/categories/show-and-tell)!
+## Troubleshooting
 
-## Documentation
+**Episode length stuck low (~3-5 steps)?**
+- Check that curriculum is active (should see phase transitions in logs)
+- Verify RSI noise is 0 at step 0
 
-Full documentation is available at **[mujocolab.github.io/mjlab](https://mujocolab.github.io/mjlab/)**.
+**Entropy stuck at ~1.0?**
+- Train with more environments: `--env.scene.num-envs 4096`
+- Increase `max_iterations` in RL config
 
-## Development
-
-```bash
-make test          # Run all tests
-make test-fast     # Skip slow tests
-make format        # Format and lint
-make docs          # Build docs locally
-```
-
-For development setup: `uvx pre-commit install`
-
-## Citation
-
-If you use mjlab in your research, please cite:
-
-```bibtex
-@misc{zakka2026mjlablightweightframeworkgpuaccelerated,
-  title={mjlab: A Lightweight Framework for GPU-Accelerated Robot Learning},
-  author={Kevin Zakka and Qiayuan Liao and Brent Yi and Louis Le Lay and Koushil Sreenath and Pieter Abbeel},
-  year={2026},
-  eprint={2601.22074},
-  archivePrefix={arXiv},
-  primaryClass={cs.RO},
-  url={https://arxiv.org/abs/2601.22074},
-}
-```
-
-## License
-
-mjlab is licensed under the [Apache License, Version 2.0](LICENSE).
-
-### Third-Party Code
-
-Some portions of mjlab are forked from external projects:
-
-- **`src/mjlab/utils/lab_api/`** — Utilities forked from [NVIDIA Isaac
-  Lab](https://github.com/isaac-sim/IsaacLab) (BSD-3-Clause license, see file
-  headers)
-
-Forked components retain their original licenses. See file headers for details.
-
-## Acknowledgments
-
-mjlab wouldn't exist without the excellent work of the Isaac Lab team, whose API
-design and abstractions mjlab builds upon.
-
-Thanks to the MuJoCo Warp team — especially Erik Frey and Taylor Howell — for
-answering our questions, giving helpful feedback, and implementing features
-based on our requests countless times.
+**Motion file not found?**
+- Set `WANDB_CACHE_DIR=/tmp/wandb_cache` to avoid permission issues
+- Or pre-download: `python -c "import wandb; api=wandb.Api(); a=api.artifact('abadjosue25-abba/csv_to_npz/caporal-g1:v0'); a.download(root='artifacts/caporal-g1:v0')"`
