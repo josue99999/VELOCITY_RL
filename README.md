@@ -2,6 +2,19 @@
 
 This branch (`motion_tracking`) contains a motion tracking task that teaches humanoid robots (G1 and H1_2) to replicate human dance movements captured by [video2robot_h1_2](https://github.com/josue99999/video2robot_h1_2).
 
+
+---
+
+## Results
+
+### G1 Huayno Dance
+![G1 Huayno](src/mjlab/output/H1_2_MOTION_TRACKING/giff/G1_HUAYNO.gif)
+
+### G1 Caporal Dance
+![G1 Caporal](src/mjlab/output/H1_2_MOTION_TRACKING/giff/G1_CAPORAL.gif)
+
+---
+
 ## Overview
 
 The motion tracking task uses **PPO (Proximal Policy Optimization)** with a **progressive curriculum** that gradually increases difficulty during training:
@@ -121,17 +134,6 @@ View real-time metrics on Weights & Biases:
 - **Reward**: Should increase from ~0 to ~+4
 - **Entropy**: Should decrease from ~1.0 to ~0.1-0.3 (policy becomes confident)
 
----
-
-## Results
-
-### G1 Huayno Dance
-![G1 Huayno](src/mjlab/output/H1_2_MOTION_TRACKING/giff/G1_HUAYNO.gif)
-
-### G1 Caporal Dance
-![G1 Caporal](src/mjlab/output/H1_2_MOTION_TRACKING/giff/G1_CAPORAL.gif)
-
----
 
 ## Key Files
 
