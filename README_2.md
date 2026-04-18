@@ -145,17 +145,17 @@ Episode length is the most reliable signal: if it stays at 3–5 steps, the curr
 
 ---
 
-## Top 3 Hardest Problems Solved
+## Top Problems Solved
 
-### Problem 1 — Early-Training Collapse with Reference State Initialization
+### Problem  — Early-Training Collapse with Reference State Initialization
 
 When training starts, the policy has no idea how to track a reference trajectory and terminates in 3–5 steps, producing near-zero gradients that never improve. Applying full RSI noise from the beginning makes this worse because the policy is initialized mid-motion with large perturbations it cannot handle. I designed a 3-phase curriculum that starts with zero RSI noise and loose termination thresholds, so the untrained policy can survive long enough to receive meaningful reward signal. Phase transitions are triggered by iteration count, giving each stage enough time to stabilize before increasing difficulty. The result was stable convergence from scratch without manual intervention or warm-start checkpoints.
 
-### Problem 2 — Reward Shaping for Whole-Body Dance Motion
+### Problem  — Reward Shaping for Whole-Body Dance Motion
 
 Tracking dance motion is harder than locomotion because the reward must penalize deviation across all joints simultaneously, including upper body, without causing the policy to sacrifice leg stability for arm accuracy. A naive L2 tracking reward on all joints collapsed to a policy that stood still and minimized average error without actually moving. I decomposed the reward into end-effector position terms, anchor orientation terms, and per-joint velocity/action smoothness penalties, weighted so that the lower body (stability) and upper body (expressiveness) were balanced. Self-collision penalties were also progressively tightened to prevent the policy from shortcutting by folding limbs. The final reward composition produced visually recognizable dance motion that maintained balance throughout.
 
-### Problem 3 — WandB Artifact Loading in Constrained Environments
+### Problem  — WandB Artifact Loading in Constrained Environments
 
 Motion files are stored as WandB artifacts and must be downloaded at training time, which fails silently when `/tmp` has permission restrictions or when the cache directory is not set correctly. This caused hard-to-debug crashes mid-training after the environment had already been initialized. I standardized the training scripts to always set `WANDB_CACHE_DIR=/tmp/wandb_cache` explicitly and added a pre-download fallback that pulls artifacts to a local `artifacts/` folder before training starts. I also documented the manual pre-download command so users can verify artifact access before launching multi-hour training runs. This eliminated a class of non-deterministic failures that only appeared on certain machines.
 
