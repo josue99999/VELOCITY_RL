@@ -27,19 +27,7 @@ MjLab reimplements the Isaac Lab training API on top of **MuJoCo + Warp**, enabl
 - Live visualization via `viser`
 - W&B + TensorBoard logging
 
----
 
-## Requirements
-
-| Component | Version |
-|-----------|---------|
-| Python    | 3.10 – 3.13 |
-| PyTorch   | ≥ 2.7.0 (CUDA 12.8) |
-| MuJoCo    | ≥ 3.4.0 |
-| CUDA      | 12.8 (Linux x86\_64) |
-| Platform  | Linux x86\_64 · macOS arm64 (CPU only) |
-
----
 
 ## 🏗️ Environment Design
 
